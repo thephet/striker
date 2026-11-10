@@ -68,10 +68,25 @@ window.SR = window.SR || {};
       this.mode = 'QUEST_HELP';
     },
 
+    openTeamShowcase: function (callback) {
+      this.mode = 'TEAM_SHOWCASE';
+      this.showcaseCallback = callback || null;
+    },
+
     handleInput: function (key, game) {
       if (this.mode === 'DIALOGUE') {
         if (key === 'A' || key === 'B' || key === 'START') {
           this.advanceDialogue();
+        }
+        return true;
+      }
+
+      if (this.mode === 'TEAM_SHOWCASE') {
+        if (key === 'A' || key === 'START') {
+          this.mode = 'NONE';
+          const cb = this.showcaseCallback;
+          this.showcaseCallback = null;
+          if (cb) cb();
         }
         return true;
       }
@@ -288,6 +303,11 @@ window.SR = window.SR || {};
 
       if (this.mode === 'DIALOGUE') {
         this.renderDialogueBox(ctx);
+        return;
+      }
+
+      if (this.mode === 'TEAM_SHOWCASE') {
+        this.renderTeamShowcase(ctx, game, tick);
         return;
       }
 
@@ -561,6 +581,70 @@ window.SR = window.SR || {};
       }
     },
 
+    renderTeamShowcase: function (ctx, game, tick) {
+      // Blank dark screen showing only the 5 team players (sprites + name + stats) + NEXT button
+      ctx.fillStyle = '#06080e';
+      ctx.fillRect(0, 0, 320, 288);
+      ctx.strokeStyle = '#ffd166';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(4, 4, 312, 280);
+      ctx.lineWidth = 1;
+
+      ctx.fillStyle = '#ffd166';
+      ctx.font = 'bold 11px monospace';
+      ctx.fillText('★ YOUR 5-A-SIDE STARTING SQUAD ★', 48, 22);
+
+      const starters = game.squad.slice(0, 5);
+      for (let i = 0; i < starters.length; i++) {
+        const p = starters[i];
+        const ry = 30 + i * 44;
+
+        ctx.fillStyle = '#111622';
+        ctx.fillRect(12, ry, 296, 40);
+        ctx.strokeStyle = '#334155';
+        ctx.strokeRect(12.5, ry + 0.5, 295, 39);
+
+        // Character Body Sprite
+        SR.drawCharacter(ctx, 20, ry + 12, {
+          skin: p.skin,
+          hair: p.hair,
+          kitPrimary: '#3a86ff',
+          kitSecondary: '#ffffff',
+          moving: true,
+          hasBall: (i === 2)
+        }, tick);
+
+        // Name, Role & Affinity
+        const aff = SR.AFFINITIES[p.affinity] || SR.AFFINITIES.SPEED;
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 10px monospace';
+        ctx.fillText(`${p.name}  [${p.role}]`, 44, ry + 14);
+
+        ctx.fillStyle = aff.color;
+        ctx.font = 'bold 8px monospace';
+        ctx.fillText(`Style: ${aff.name} (${aff.icon})`, 185, ry + 14);
+
+        // Stats Row
+        ctx.fillStyle = '#4cc9f0';
+        ctx.font = '8px monospace';
+        ctx.fillText(`DRI:${p.dri}  PAS:${p.pas}  SHO:${p.sho}  TAC:${p.tac}  INT:${p.int}  GK:${p.gk}  STA:${p.maxSta}`, 44, ry + 27);
+
+        // Bio / Signature Move
+        const sk = SR.SKILLS[p.skills[0]];
+        ctx.fillStyle = '#94a3b8';
+        ctx.fillText(`Skill: ${sk ? sk.name : 'Dash'} — ${p.bio.slice(0, 32)}`, 44, ry + 36);
+      }
+
+      // NEXT button at bottom
+      ctx.fillStyle = '#1e293b';
+      ctx.fillRect(60, 254, 200, 24);
+      ctx.strokeStyle = '#06d6a0';
+      ctx.strokeRect(60.5, 254.5, 199, 23);
+      ctx.fillStyle = '#06d6a0';
+      ctx.font = 'bold 10px monospace';
+      ctx.fillText('NEXT: GO OUTSIDE [A / Enter] ▶', 72, 269);
+    },
+
     renderQuestHelp: function (ctx, game) {
       const reg = game.world.region;
       ctx.fillStyle = '#ffd166';
@@ -569,17 +653,22 @@ window.SR = window.SR || {};
 
       ctx.fillStyle = '#4cc9f0';
       ctx.font = 'bold 9px monospace';
-      ctx.fillText(`CURRENT REGION: ${reg.name}`, 18, 46);
+      ctx.fillText(`CURRENT CHAPTER: ${reg.name}`, 18, 46);
 
       ctx.fillStyle = '#f1f5f9';
       ctx.font = '9px monospace';
-      const qState = game.questState[reg.id] || 'NOT_STARTED';
-      const qDesc = qState === 'COMPLETED'
-        ? `COMPLETED! ${reg.quest.giverName} joined your squad!`
-        : (qState === 'FOUND_ITEM'
-          ? `Found ${reg.quest.itemName}! Return to ${reg.quest.giverName} in Town!`
-          : `Talk to ${reg.quest.giverName} in Town & find the ${reg.quest.itemName} in the Dungeon chest!`);
-      this.wrapText(ctx, `MINI-QUEST: ${qDesc}`, 18, 62, 284, 13);
+      let qDesc = '';
+      if (game.world.isPrologue) {
+        qDesc = 'Visit your Friend\'s Mum next door or head NORTH to the High School, climb 2 floors of classrooms & corridors, and defeat the Varsity Jocks in the Gym!';
+      } else {
+        const qState = game.questState[reg.id] || 'NOT_STARTED';
+        qDesc = qState === 'COMPLETED'
+          ? `COMPLETED! ${reg.quest.giverName} joined your squad!`
+          : (qState === 'FOUND_ITEM'
+            ? `Found ${reg.quest.itemName}! Return to ${reg.quest.giverName} in Town!`
+            : `Talk to ${reg.quest.giverName} in Town & find the ${reg.quest.itemName} in the Dungeon chest!`);
+      }
+      this.wrapText(ctx, `OBJECTIVE: ${qDesc}`, 18, 62, 284, 13);
 
       ctx.fillStyle = '#06d6a0';
       ctx.font = 'bold 9px monospace';

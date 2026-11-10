@@ -45,8 +45,8 @@ window.SR = window.SR || {};
       this.playerScore = 0;
       this.enemyScore = 0;
       this.turn = 1;
-      this.maxTurns = this.isBoss ? 14 : 10;
-      this.goalsToWin = this.isBoss ? 3 : 2;
+      this.maxTurns = (opts && opts.maxTurns) ? opts.maxTurns : (this.isBoss ? 14 : 10);
+      this.goalsToWin = (opts && opts.goalsToWin) ? opts.goalsToWin : (this.isBoss ? 3 : 2);
 
       this.zone = 1; // Kickoff in Midfield
       this.possession = 'PLAYER';

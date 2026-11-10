@@ -6,16 +6,29 @@ window.SR = window.SR || {};
     GRASS: 0,
     ROAD: 1,
     WALL: 2,
-    TURF_WILD: 3,   // High-encounter street pitch turf (like tall grass)
-    PORTAL_UP: 4,   // Exit to next zone
-    PORTAL_DOWN: 5, // Exit to previous zone
-    CLUB_DOOR: 6,   // Clubhouse / Free Agents & Rest
-    SHOP_DOOR: 7,   // Kit & Item Shop
+    TURF_WILD: 3,         // High-encounter street pitch turf (like tall grass)
+    PORTAL_UP: 4,         // Exit to next zone
+    PORTAL_DOWN: 5,       // Exit to previous zone
+    CLUB_DOOR: 6,         // Clubhouse / Free Agents & Rest
+    SHOP_DOOR: 7,         // Kit & Item Shop
     ROOF_RED: 8,
     ROOF_BLUE: 9,
     WATER: 10,
     PITCH_LINE: 11,
-    GOAL_TOP: 12
+    GOAL_TOP: 12,
+    WOOD_FLOOR: 13,       // Bedroom & House interior wood floor
+    RUG: 14,              // Cozy living room / bedroom rug
+    BED: 15,              // Hero's bed
+    SOFA: 16,             // Living room / bedroom sofa
+    TV_CONSOLE: 17,       // CRT TV + retro console connected
+    BOOKSHELF: 18,        // Bookshelf with colorful books
+    KITCHEN_COUNTER: 19,  // Kitchen stove/sink/counter
+    HOUSE_DOOR_HERO: 20,  // Door to Hero's house / bedroom
+    HOUSE_DOOR_FRIEND: 21,// Door to Friend's house (Mum's kitchen/living room)
+    SCHOOL_FLOOR: 22,     // School hallway & classroom floor
+    STAIRS_UP: 23,        // Roguelike stairs to next school floor / gym
+    GYM_FLOOR: 24,        // Hardwood school gym court
+    GYM_LINE: 25          // Painted gym court line
   };
 
   // Draw a 16x16 Overworld Tile
@@ -46,7 +59,6 @@ window.SR = window.SR || {};
       case SR.TILE.WALL: {
         ctx.fillStyle = pal.wall;
         ctx.fillRect(x, y, 16, 16);
-        // Brick pattern
         ctx.fillStyle = 'rgba(0,0,0,0.35)';
         ctx.fillRect(x, y + 7, 16, 2);
         ctx.fillRect(x, y + 14, 16, 2);
@@ -58,13 +70,11 @@ window.SR = window.SR || {};
         break;
       }
       case SR.TILE.TURF_WILD: {
-        // Checkered street pitch turf with animated blades/sparks
         ctx.fillStyle = '#2d6a4f';
         ctx.fillRect(x, y, 16, 16);
         ctx.fillStyle = '#40916c';
         ctx.fillRect(x, y, 8, 8);
         ctx.fillRect(x + 8, y + 8, 8, 8);
-        // Tall grass / turf tufts
         ctx.fillStyle = '#74c69d';
         const sway = (Math.floor(tick / 20) % 2);
         ctx.fillRect(x + 3 + sway, y + 3, 1, 4);
@@ -83,7 +93,6 @@ window.SR = window.SR || {};
         ctx.strokeStyle = glow;
         ctx.lineWidth = 1;
         ctx.strokeRect(x + 2.5, y + 2.5, 11, 11);
-        // Arrow indicator
         ctx.fillStyle = glow;
         if (type === SR.TILE.PORTAL_UP) {
           ctx.fillRect(x + 7, y + 4, 2, 7);
@@ -108,14 +117,21 @@ window.SR = window.SR || {};
         break;
       }
       case SR.TILE.CLUB_DOOR:
-      case SR.TILE.SHOP_DOOR: {
+      case SR.TILE.SHOP_DOOR:
+      case SR.TILE.HOUSE_DOOR_HERO:
+      case SR.TILE.HOUSE_DOOR_FRIEND: {
         ctx.fillStyle = '#e0d6c3';
         ctx.fillRect(x, y, 16, 16);
-        ctx.fillStyle = '#2b2d42';
-        ctx.fillRect(x + 3, y + 4, 10, 12);
-        ctx.fillStyle = type === SR.TILE.CLUB_DOOR ? '#ffd166' : '#4cc9f0';
-        ctx.fillRect(x + 4, y + 1, 8, 3);
-        ctx.fillRect(x + 10, y + 10, 2, 2);
+        ctx.fillStyle = '#5c3a21';
+        ctx.fillRect(x + 3, y + 3, 10, 13);
+        const lintel = type === SR.TILE.CLUB_DOOR ? '#ffd166'
+          : type === SR.TILE.SHOP_DOOR ? '#4cc9f0'
+          : type === SR.TILE.HOUSE_DOOR_HERO ? '#ef476f'
+          : '#06d6a0';
+        ctx.fillStyle = lintel;
+        ctx.fillRect(x + 3, y + 1, 10, 2);
+        ctx.fillStyle = '#ffd166';
+        ctx.fillRect(x + 10, y + 9, 2, 2);
         break;
       }
       case SR.TILE.PITCH_LINE: {
@@ -135,6 +151,143 @@ window.SR = window.SR || {};
         ctx.fillRect(x + 13, y + 2, 2, 12);
         ctx.fillStyle = 'rgba(255,255,255,0.35)';
         ctx.fillRect(x + 3, y + 5, 10, 7);
+        break;
+      }
+      case SR.TILE.WOOD_FLOOR: {
+        ctx.fillStyle = '#8d5b3c';
+        ctx.fillRect(x, y, 16, 16);
+        ctx.fillStyle = '#73482d';
+        ctx.fillRect(x, y + 4, 16, 1);
+        ctx.fillRect(x, y + 9, 16, 1);
+        ctx.fillRect(x, y + 14, 16, 1);
+        ctx.fillRect(x + 6, y, 1, 4);
+        ctx.fillRect(x + 12, y + 5, 1, 4);
+        break;
+      }
+      case SR.TILE.RUG: {
+        ctx.fillStyle = '#8d5b3c';
+        ctx.fillRect(x, y, 16, 16);
+        ctx.fillStyle = '#9b2226';
+        ctx.fillRect(x + 1, y + 1, 14, 14);
+        ctx.strokeStyle = '#ffd166';
+        ctx.strokeRect(x + 2.5, y + 2.5, 11, 11);
+        break;
+      }
+      case SR.TILE.BED: {
+        // Wood floor base + bed frame + pillow + blue blanket
+        ctx.fillStyle = '#8d5b3c';
+        ctx.fillRect(x, y, 16, 16);
+        ctx.fillStyle = '#4a2c11';
+        ctx.fillRect(x + 1, y + 1, 14, 14);
+        // Pillow
+        ctx.fillStyle = '#f8f9fa';
+        ctx.fillRect(x + 3, y + 2, 10, 4);
+        // Blanket
+        ctx.fillStyle = '#3a86ff';
+        ctx.fillRect(x + 2, y + 6, 12, 8);
+        ctx.fillStyle = '#4cc9f0';
+        ctx.fillRect(x + 2, y + 6, 12, 2);
+        break;
+      }
+      case SR.TILE.SOFA: {
+        ctx.fillStyle = '#8d5b3c';
+        ctx.fillRect(x, y, 16, 16);
+        // Plush green/teal retro sofa
+        ctx.fillStyle = '#1b4332';
+        ctx.fillRect(x + 1, y + 3, 14, 11);
+        ctx.fillStyle = '#2d6a4f';
+        ctx.fillRect(x + 2, y + 4, 12, 5);
+        ctx.fillStyle = '#40916c';
+        ctx.fillRect(x + 3, y + 8, 10, 5);
+        break;
+      }
+      case SR.TILE.TV_CONSOLE: {
+        // Wood floor + CRT TV at top + Retro Game Console box & wire at bottom
+        ctx.fillStyle = '#8d5b3c';
+        ctx.fillRect(x, y, 16, 16);
+        // CRT casing
+        ctx.fillStyle = '#2b2d42';
+        ctx.fillRect(x + 2, y + 1, 12, 9);
+        // Animated screen glow
+        ctx.fillStyle = (Math.floor(tick / 15) % 2 === 0) ? '#4cc9f0' : '#3a86ff';
+        ctx.fillRect(x + 3, y + 2, 9, 7);
+        // Wire to console
+        ctx.fillStyle = '#111';
+        ctx.fillRect(x + 7, y + 10, 1, 2);
+        // Retro 16-bit console on floor
+        ctx.fillStyle = '#adb5bd';
+        ctx.fillRect(x + 4, y + 11, 8, 4);
+        ctx.fillStyle = '#ef476f';
+        ctx.fillRect(x + 5, y + 12, 2, 2);
+        ctx.fillStyle = '#2b2d42';
+        ctx.fillRect(x + 8, y + 12, 3, 2);
+        break;
+      }
+      case SR.TILE.BOOKSHELF: {
+        ctx.fillStyle = '#4a2c11';
+        ctx.fillRect(x, y, 16, 16);
+        ctx.fillStyle = '#2b1807';
+        ctx.fillRect(x + 1, y + 2, 14, 5);
+        ctx.fillRect(x + 1, y + 9, 14, 5);
+        // Colorful book spines
+        const cols = ['#ef476f', '#ffd166', '#06d6a0', '#4cc9f0', '#9b5de5'];
+        for (let b = 0; b < 5; b++) {
+          ctx.fillStyle = cols[b];
+          ctx.fillRect(x + 2 + b * 2.5, y + 3, 2, 4);
+          ctx.fillStyle = cols[(b + 2) % 5];
+          ctx.fillRect(x + 2 + b * 2.5, y + 10, 2, 4);
+        }
+        break;
+      }
+      case SR.TILE.KITCHEN_COUNTER: {
+        ctx.fillStyle = '#8d5b3c';
+        ctx.fillRect(x, y, 16, 16);
+        ctx.fillStyle = '#6c757d';
+        ctx.fillRect(x, y + 2, 16, 13);
+        ctx.fillStyle = '#dee2e6';
+        ctx.fillRect(x + 1, y + 2, 14, 6);
+        // Burners / Sink detail
+        ctx.fillStyle = '#ef476f';
+        ctx.fillRect(x + 3, y + 4, 3, 3);
+        ctx.fillStyle = '#4cc9f0';
+        ctx.fillRect(x + 9, y + 3, 5, 4);
+        break;
+      }
+      case SR.TILE.SCHOOL_FLOOR: {
+        ctx.fillStyle = '#3d405b';
+        ctx.fillRect(x, y, 16, 16);
+        ctx.fillStyle = '#33364d';
+        ctx.fillRect(x, y, 8, 8);
+        ctx.fillRect(x + 8, y + 8, 8, 8);
+        break;
+      }
+      case SR.TILE.STAIRS_UP: {
+        ctx.fillStyle = '#3d405b';
+        ctx.fillRect(x, y, 16, 16);
+        ctx.fillStyle = '#1d3557';
+        ctx.fillRect(x + 1, y + 1, 14, 14);
+        // Gold steps ascending
+        ctx.fillStyle = '#ffd166';
+        ctx.fillRect(x + 2, y + 11, 12, 2);
+        ctx.fillRect(x + 4, y + 8, 10, 2);
+        ctx.fillRect(x + 6, y + 5, 8, 2);
+        ctx.fillRect(x + 8, y + 2, 6, 2);
+        break;
+      }
+      case SR.TILE.GYM_FLOOR: {
+        ctx.fillStyle = '#c98a4b';
+        ctx.fillRect(x, y, 16, 16);
+        ctx.fillStyle = '#b5783c';
+        ctx.fillRect(x, y + 5, 16, 1);
+        ctx.fillRect(x, y + 11, 16, 1);
+        break;
+      }
+      case SR.TILE.GYM_LINE: {
+        ctx.fillStyle = '#c98a4b';
+        ctx.fillRect(x, y, 16, 16);
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(x + 7, y, 2, 16);
+        ctx.fillRect(x, y + 7, 16, 2);
         break;
       }
       default: {
@@ -170,7 +323,6 @@ window.SR = window.SR || {};
     // Jersey / Torso
     ctx.fillStyle = kit1;
     ctx.fillRect(x + 3, py + 6, 10, 4);
-    // Jersey Stripe
     ctx.fillStyle = kit2;
     ctx.fillRect(x + 7, py + 6, 2, 4);
 
@@ -194,7 +346,6 @@ window.SR = window.SR || {};
     ctx.fillRect(x + 3, py + 2, 1, 2);
     ctx.fillRect(x + 12, py + 2, 1, 2);
 
-    // Optional Captain/Role Badge or Ball at feet
     if (opts && opts.hasBall) {
       SR.drawBall(ctx, x + 11, y + 11);
     }
