@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>STRIKER ROGUE: Street to Stadium</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <!-- Top Info Bar -->
+    <header class="top-bar">
+      <div class="brand">
+        <span class="brand-badge">GBA-RPG</span>
+        <h1>STRIKER ROGUE</h1>
+      </div>
+      <div class="hud-pills" id="topHudPills">
+        <span class="pill" id="hudRegion">Reg 1: Docklands</span>
+        <span class="pill" id="hudCash">$150</span>
+        <span class="pill" id="hudContracts">Contracts: 2</span>
+        <span class="pill" id="hudMorale">Morale: ♥♥♥</span>
+      </div>
+    </header>
+
+    <!-- Main Handheld Screen + Controls Container -->
+    <main class="console-body">
+      <div class="screen-bezel">
+        <div class="screen-header">
+          <span class="power-led">● BATTERY</span>
+          <span class="zone-label" id="bezelZoneName">RUSTYARD TOWN</span>
+          <span class="quest-indicator" id="bezelQuestStatus">Quest: Talk to Scout Rio</span>
+        </div>
+        <div class="canvas-wrap">
+          <canvas id="gameCanvas" width="320" height="288"></canvas>
+        </div>
+      </div>
+
+      <!-- Controls Deck (Works with Touch, Mouse, and Keyboard) -->
+      <section class="controls-deck">
+        <!-- D-Pad -->
+        <div class="dpad-container">
+          <button class="dpad-btn up" data-key="ArrowUp" aria-label="Up">▲</button>
+          <button class="dpad-btn left" data-key="ArrowLeft" aria-label="Left">◀</button>
+          <div class="dpad-center"></div>
+          <button class="dpad-btn right" data-key="ArrowRight" aria-label="Right">▶</button>
+          <button class="dpad-btn down" data-key="ArrowDown" aria-label="Down">▼</button>
+        </div>
+
+        <!-- Center System Buttons -->
+        <div class="meta-buttons">
+          <button class="sys-btn" id="btnSquadMenu" data-key="KeyM">
+            <span class="sys-pill"></span>
+            <span class="sys-label">SQUAD / BAG (M)</span>
+          </button>
+          <button class="sys-btn" id="btnQuestHelp" data-key="KeyQ">
+            <span class="sys-pill"></span>
+            <span class="sys-label">QUEST / GUIDE (Q)</span>
+          </button>
+        </div>
+
+        <!-- A / B Action Buttons -->
+        <div class="ab-container">
+          <div class="ab-group">
+            <button class="action-btn btn-b" data-key="KeyX" aria-label="Cancel / Back">
+              B
+              <small>BACK (X)</small>
+            </button>
+            <button class="action-btn btn-a" data-key="KeyZ" aria-label="Confirm / Action">
+              A
+              <small>ACT (Z)</small>
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <footer class="controls-hint">
+        <span><strong>PC:</strong> Arrows/WASD + <strong>Z/Enter</strong> (A) + <strong>X/Esc</strong> (B) + <strong>M</strong> (Squad/Bag) + <strong>Q</strong> (Quest/Help) &nbsp;|&nbsp; <strong>Click/Tap</strong> directly on menus or buttons!</span>
+      </footer>
+    </main>
+  </div>
+
+  <!-- Modular Game Scripts -->
+  <script src="src/data.js"></script>
+  <script src="src/sprites.js"></script>
+  <script src="src/world.js"></script>
+  <script src="src/match.js"></script>
+  <script src="src/ui.js"></script>
+  <script src="src/main.js"></script>
+</body>
+</html>
