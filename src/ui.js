@@ -18,6 +18,7 @@ window.SR = window.SR || {};
     // Post-match scouting candidate
     scoutCandidate: null,
     matchRewardSummary: '',
+    helpPage: 0,
 
     // Open RPG Dialogue Box
     showDialogue: function (speaker, pages, callback) {
@@ -66,6 +67,7 @@ window.SR = window.SR || {};
 
     openQuestHelp: function () {
       this.mode = 'QUEST_HELP';
+      this.helpPage = 0;
     },
 
     openTeamShowcase: function (callback) {
@@ -92,7 +94,17 @@ window.SR = window.SR || {};
       }
 
       if (this.mode === 'QUEST_HELP') {
-        if (key === 'A' || key === 'B' || key === 'SELECT' || key === 'START') {
+        if (key === 'LEFT' || key === 'UP') {
+          this.helpPage = (this.helpPage + 2) % 3;
+        } else if (key === 'RIGHT' || key === 'DOWN') {
+          this.helpPage = (this.helpPage + 1) % 3;
+        } else if (key === 'A') {
+          if (this.helpPage < 2) {
+            this.helpPage++;
+          } else {
+            this.mode = 'NONE';
+          }
+        } else if (key === 'B' || key === 'SELECT' || key === 'START') {
           this.mode = 'NONE';
         }
         return true;
@@ -298,7 +310,25 @@ window.SR = window.SR || {};
     },
 
     handleCanvasClick: function (cx, cy, game) {
-      if (this.mode === 'DIALOGUE' || this.mode === 'TEAM_SHOWCASE' || this.mode === 'QUEST_HELP' || this.mode === 'VICTORY_CUP') {
+      if (this.mode === 'DIALOGUE' || this.mode === 'TEAM_SHOWCASE' || this.mode === 'VICTORY_CUP') {
+        this.handleInput('A', game);
+        return;
+      }
+
+      if (this.mode === 'QUEST_HELP') {
+        // Clickable Top Page Tabs (y: 32..54)
+        if (cy >= 32 && cy <= 54) {
+          if (cx < 112) this.helpPage = 0;
+          else if (cx < 210) this.helpPage = 1;
+          else this.helpPage = 2;
+          return;
+        }
+        // Bottom-right Close zone
+        if (cy >= 252 && cx >= 195) {
+          this.mode = 'NONE';
+          return;
+        }
+        // Bottom-left or body tap flips page (and closes after page 3/3)
         this.handleInput('A', game);
         return;
       }
@@ -690,57 +720,163 @@ window.SR = window.SR || {};
 
     renderQuestHelp: function (ctx, game) {
       const reg = game.world.region;
+      const page = this.helpPage || 0;
+
+      // Top Header & Page Counter
       ctx.fillStyle = '#ffd166';
-      ctx.font = 'bold 11px monospace';
-      ctx.fillText('QUEST LOG & TACTICAL GUIDE', 18, 26);
+      ctx.font = 'bold 10px monospace';
+      ctx.fillText('QUEST & TACTICAL GUIDE', 16, 25);
 
       ctx.fillStyle = '#4cc9f0';
       ctx.font = 'bold 9px monospace';
-      ctx.fillText(`CURRENT CHAPTER: ${reg.name}`, 18, 46);
+      const pageLabel = `◄ PAGE ${page + 1}/3 ►`;
+      ctx.fillText(pageLabel, 304 - ctx.measureText(pageLabel).width, 25);
 
-      ctx.fillStyle = '#f1f5f9';
-      ctx.font = '9px monospace';
-      let qDesc = '';
-      if (game.world.isPrologue) {
-        qDesc = 'Visit your Friend\'s Mum next door or head NORTH to the High School, climb 2 floors of classrooms & corridors, and defeat the Varsity Jocks in the Gym!';
-      } else {
-        const qState = game.questState[reg.id] || 'NOT_STARTED';
-        qDesc = qState === 'COMPLETED'
-          ? `COMPLETED! ${reg.quest.giverName} joined your squad!`
-          : (qState === 'FOUND_ITEM'
-            ? `Found ${reg.quest.itemName}! Return to ${reg.quest.giverName} in Town!`
-            : `Talk to ${reg.quest.giverName} in Town & find the ${reg.quest.itemName} in the Dungeon chest!`);
+      // 3 Clickable Page Tabs
+      const tabs = ['1. QUEST', '2. TACTICS', '3. CONTROLS'];
+      for (let t = 0; t < 3; t++) {
+        const tx = 16 + t * 96;
+        const active = (page === t);
+        ctx.fillStyle = active ? '#ffd166' : '#1e293b';
+        ctx.fillRect(tx, 34, 92, 16);
+        ctx.strokeStyle = active ? '#ffd166' : '#475569';
+        ctx.strokeRect(tx + 0.5, 34.5, 91, 15);
+        ctx.fillStyle = active ? '#0b0e16' : '#cbd5e1';
+        ctx.font = 'bold 8px monospace';
+        ctx.fillText(tabs[t], tx + 16, 45);
       }
-      this.wrapText(ctx, `OBJECTIVE: ${qDesc}`, 18, 62, 284, 13);
 
-      ctx.fillStyle = '#06d6a0';
-      ctx.font = 'bold 9px monospace';
-      ctx.fillText('3-PHASE CLASH TACTICAL TRIANGLE:', 18, 108);
-      ctx.fillStyle = '#cbd5e1';
-      ctx.font = '9px monospace';
-      ctx.fillText('• PASS beats TACKLE (+25% & +15% Rhythm)', 18, 124);
-      ctx.fillText('• TACKLE beats DRIBBLE (+25% Steal power)', 18, 138);
-      ctx.fillText('• DRIBBLE beats INTERCEPT (+25% Solo run)', 18, 152);
-      ctx.fillText('• INTERCEPT beats PASS (+25% Cut lane)', 18, 166);
-      ctx.fillText('• BLOCK cuts incoming SHOOT power by 35%', 18, 180);
+      if (page === 0) {
+        // PAGE 1/3: Current Chapter, Quest Objective & Run Status
+        ctx.fillStyle = '#4cc9f0';
+        ctx.font = 'bold 9px monospace';
+        ctx.fillText(`CHAPTER: ${reg.name}`, 16, 70);
 
-      ctx.fillStyle = '#ffca3a';
-      ctx.font = 'bold 9px monospace';
-      ctx.fillText('PLAYER STYLE TRIANGLE (+20% Advantage):', 18, 200);
-      ctx.fillStyle = '#cbd5e1';
-      ctx.fillText('POWER beats TECH  •  TECH beats SPEED  •  SPEED beats POWER', 18, 214);
+        // Framed Objective Box
+        ctx.fillStyle = '#111624';
+        ctx.fillRect(16, 80, 288, 78);
+        ctx.strokeStyle = '#334155';
+        ctx.strokeRect(16.5, 80.5, 287, 77);
 
-      ctx.fillStyle = '#4cc9f0';
-      ctx.font = 'bold 9px monospace';
-      ctx.fillText('SQUAD ROTATION & STAMINA:', 18, 234);
-      ctx.fillStyle = '#cbd5e1';
-      ctx.font = '8px monospace';
-      ctx.fillText('• [B] Swap Partner in Midfield/Attack  • [M] Bench Subs & Sodas', 18, 247);
-      ctx.fillText('• Resting teammates recover +4 STA/turn (+6 STA on Bench)', 18, 258);
+        ctx.fillStyle = '#ffd166';
+        ctx.font = 'bold 9px monospace';
+        ctx.fillText('CURRENT OBJECTIVE:', 24, 96);
+
+        let qDesc = '';
+        if (game.world.isPrologue) {
+          qDesc = 'Visit your Friend\'s Mum next door or head NORTH to the High School, climb 2 floors of classrooms & corridors, and defeat the Varsity Jocks in the Gym!';
+        } else {
+          const qState = game.questState[reg.id] || 'NOT_STARTED';
+          qDesc = qState === 'COMPLETED'
+            ? `COMPLETED! ${reg.quest.giverName} joined your squad!`
+            : (qState === 'FOUND_ITEM'
+              ? `Found ${reg.quest.itemName}! Return to ${reg.quest.giverName} in Town!`
+              : `Talk to ${reg.quest.giverName} in Town & find the ${reg.quest.itemName} in the Dungeon chest!`);
+        }
+        ctx.fillStyle = '#f1f5f9';
+        ctx.font = '9px monospace';
+        this.wrapText(ctx, qDesc, 24, 113, 272, 14);
+
+        // Squad & Run Progress Summary
+        ctx.fillStyle = '#06d6a0';
+        ctx.font = 'bold 9px monospace';
+        ctx.fillText('TEAM & SEASON STATUS:', 16, 178);
+
+        const benchCount = Math.max(0, game.squad.length - 5);
+        ctx.fillStyle = '#cbd5e1';
+        ctx.font = '9px monospace';
+        ctx.fillText(`• Cash: $${game.cash}   • Contracts: ${game.contracts}`, 18, 196);
+        ctx.fillText(`• Squad: 5 Starters + ${benchCount} Bench Sub${benchCount === 1 ? '' : 's'}`, 18, 213);
+        ctx.fillText(`• Morale: ${game.morale}/3 Hearts (Heal at Beds/Club)`, 18, 230);
+      } else if (page === 1) {
+        // PAGE 2/3: Match Moves & 3-Style Triangle
+        ctx.fillStyle = '#06d6a0';
+        ctx.font = 'bold 9px monospace';
+        ctx.fillText('MOVE COUNTERS (+25% Clash Power):', 16, 70);
+
+        ctx.fillStyle = '#f1f5f9';
+        ctx.font = '9px monospace';
+        ctx.fillText('• PASS beats TACKLE (+15% Next Boost)', 18, 88);
+        ctx.fillText('• TACKLE beats DRIBBLE (Steals ball)', 18, 103);
+        ctx.fillText('• DRIBBLE beats INTERCEPT (Solo run)', 18, 118);
+        ctx.fillText('• INTERCEPT beats PASS (Cuts lane)', 18, 133);
+        ctx.fillText('• BLOCK cuts Foe Shot power by 35%', 18, 148);
+
+        ctx.fillStyle = '#334155';
+        ctx.fillRect(16, 160, 288, 1);
+
+        ctx.fillStyle = '#ffca3a';
+        ctx.font = 'bold 9px monospace';
+        ctx.fillText('STYLE TRIANGLE (+20% Bonus / -15% Weak):', 16, 177);
+
+        // Visual GBA Style Badges Diagram: [POWER] > [TECH] > [SPEED] > [POWER]
+        const drawPill = (px, label, col) => {
+          ctx.fillStyle = col;
+          ctx.fillRect(px, 187, 48, 15);
+          ctx.fillStyle = '#090c12';
+          ctx.font = 'bold 8px monospace';
+          ctx.fillText(label, px + 7, 198);
+        };
+        drawPill(18,  'POWER', '#ff595e');
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 9px monospace';
+        ctx.fillText('>', 74, 198);
+        drawPill(88,  'TECH',  '#4cc9f0');
+        ctx.fillStyle = '#ffffff';
+        ctx.fillText('>', 144, 198);
+        drawPill(158, 'SPEED', '#ffca3a');
+        ctx.fillStyle = '#ffffff';
+        ctx.fillText('>', 214, 198);
+        drawPill(228, 'POWER', '#ff595e');
+
+        ctx.fillStyle = '#cbd5e1';
+        ctx.font = '8px monospace';
+        this.wrapText(
+          ctx,
+          'Same Style = Even (no modifier). Every saved shot tires the Foe Keeper (-12% save power)!',
+          18, 218, 282, 13
+        );
+      } else {
+        // PAGE 3/3: Squad Rotation, Stamina, Overtime & Controls
+        ctx.fillStyle = '#4cc9f0';
+        ctx.font = 'bold 9px monospace';
+        ctx.fillText('ROTATION, STAMINA & OVERTIME:', 16, 70);
+
+        ctx.fillStyle = '#f1f5f9';
+        ctx.font = '8px monospace';
+        ctx.fillText('• [B] Swap Partner: Switch MID1/MID2 or', 18, 87);
+        ctx.fillText('  overlap a Midfielder into Attack/Defense!', 18, 99);
+        ctx.fillText('• Resting off-ball recovers +4 STA/turn', 18, 114);
+        ctx.fillText('  (Bench players recover +6 STA/turn).', 18, 126);
+        ctx.fillText('• Draws: 3-turn Golden Goal Overtime,', 18, 141);
+        ctx.fillText('  followed by a Penalty Shootout!', 18, 153);
+
+        ctx.fillStyle = '#334155';
+        ctx.fillRect(16, 165, 288, 1);
+
+        ctx.fillStyle = '#ffd166';
+        ctx.font = 'bold 9px monospace';
+        ctx.fillText('CONTROLS (KEYBOARD & TOUCH):', 16, 181);
+
+        ctx.fillStyle = '#cbd5e1';
+        ctx.font = '8px monospace';
+        ctx.fillText('• Move / Navigate : Arrows, WASD, or Tap', 18, 197);
+        ctx.fillText('• Confirm [A]     : Z, Enter, Space (1-4)', 18, 210);
+        ctx.fillText('• Back / Swap [B] : X, Esc, or [B] Pill', 18, 223);
+        ctx.fillText('• Squad/Subs [M]  : M   • Guide [Q] : Q', 18, 236);
+      }
+
+      // Clean Footer Navigation Bar
+      ctx.fillStyle = '#334155';
+      ctx.fillRect(16, 252, 288, 1);
 
       ctx.fillStyle = '#ffd166';
-      ctx.font = 'bold 9px monospace';
-      ctx.fillText('Press [A / B / Q] to Close', 92, 274);
+      ctx.font = 'bold 8px monospace';
+      const nextHint = page < 2 ? `[◄/►] or [A] Page ${page + 2}/3` : '[◄/►] Pages • [A] Done';
+      ctx.fillText(nextHint, 18, 268);
+      ctx.fillStyle = '#94a3b8';
+      const closeHint = '[B / Q] Close';
+      ctx.fillText(closeHint, 304 - ctx.measureText(closeHint).width, 268);
     },
 
     renderVictoryCup: function (ctx, game) {
