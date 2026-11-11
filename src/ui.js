@@ -297,6 +297,49 @@ window.SR = window.SR || {};
       return false;
     },
 
+    handleCanvasClick: function (cx, cy, game) {
+      if (this.mode === 'DIALOGUE' || this.mode === 'TEAM_SHOWCASE' || this.mode === 'QUEST_HELP' || this.mode === 'VICTORY_CUP') {
+        this.handleInput('A', game);
+        return;
+      }
+
+      if (this.mode === 'SQUAD') {
+        // Top Tabs: Squad (14..156, 14..34) | Bag (164..306, 14..34)
+        if (cy >= 12 && cy <= 36) {
+          if (cx >= 14 && cx <= 156 && this.squadTab !== 0) {
+            this.handleInput('LEFT', game);
+          } else if (cx >= 164 && cx <= 306 && this.squadTab !== 1) {
+            this.handleInput('RIGHT', game);
+          }
+          return;
+        }
+        // Bottom Close Strip
+        if (cy >= 256) {
+          this.handleInput('B', game);
+          return;
+        }
+        if (this.squadTab === 0) {
+          const maxVisible = 7;
+          const startIdx = Math.max(0, Math.min(this.cursor - 3, Math.max(0, game.squad.length - maxVisible)));
+          const row = Math.floor((cy - 50) / 26);
+          if (row >= 0 && row < Math.min(maxVisible, game.squad.length)) {
+            const targetIdx = startIdx + row;
+            this.cursor = targetIdx;
+            this.handleInput('A', game);
+          }
+        } else {
+          const row = Math.floor((cy - 52) / 28);
+          if (row >= 0 && row < Math.min(7, game.bag.length)) {
+            this.cursor = row;
+            this.handleInput('A', game);
+          }
+        }
+        return;
+      }
+
+      this.handleInput('A', game);
+    },
+
     // Render active UI overlay on the 320x288 canvas
     render: function (ctx, game, tick) {
       if (this.mode === 'NONE') return;
@@ -683,12 +726,21 @@ window.SR = window.SR || {};
 
       ctx.fillStyle = '#ffca3a';
       ctx.font = 'bold 9px monospace';
-      ctx.fillText('PLAYER STYLE TRIANGLE (+20% Advantage):', 18, 204);
+      ctx.fillText('PLAYER STYLE TRIANGLE (+20% Advantage):', 18, 200);
       ctx.fillStyle = '#cbd5e1';
-      ctx.fillText('POWER beats TECH  •  TECH beats SPEED  •  SPEED beats POWER', 18, 218);
+      ctx.fillText('POWER beats TECH  •  TECH beats SPEED  •  SPEED beats POWER', 18, 214);
+
+      ctx.fillStyle = '#4cc9f0';
+      ctx.font = 'bold 9px monospace';
+      ctx.fillText('SQUAD ROTATION & STAMINA:', 18, 234);
+      ctx.fillStyle = '#cbd5e1';
+      ctx.font = '8px monospace';
+      ctx.fillText('• [B] Swap Partner in Midfield/Attack  • [M] Bench Subs & Sodas', 18, 247);
+      ctx.fillText('• Resting teammates recover +4 STA/turn (+6 STA on Bench)', 18, 258);
 
       ctx.fillStyle = '#ffd166';
-      ctx.fillText('Press [A / B / Q] to Close', 92, 266);
+      ctx.font = 'bold 9px monospace';
+      ctx.fillText('Press [A / B / Q] to Close', 92, 274);
     },
 
     renderVictoryCup: function (ctx, game) {

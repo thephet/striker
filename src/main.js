@@ -180,6 +180,12 @@ window.SR = window.SR || {};
     },
 
     handleActionInput: function (cmd) {
+      // Let active UI overlays (Squad/Sub Menu, Bag Dialogue, Tactical Help) handle input first, even during a Match!
+      if (SR.UI.mode !== 'NONE') {
+        SR.UI.handleInput(cmd, this);
+        return;
+      }
+
       if (SR.Match.active) {
         if (SR.Match.isTextBoxState()) {
           if (cmd === 'A' || cmd === 'B' || cmd === 'START') {
@@ -187,16 +193,25 @@ window.SR = window.SR || {};
           }
           return;
         }
+        if (cmd === 'START') {
+          if (!SR.Match.inPenalties) {
+            SR.UI.openSquadMenu();
+          }
+          return;
+        }
+        if (cmd === 'SELECT') {
+          SR.UI.openQuestHelp();
+          return;
+        }
+        if (cmd === 'B') {
+          SR.Match.swapPartner();
+          return;
+        }
         if (cmd === 'LEFT')  SR.Match.cursor = (SR.Match.cursor % 2 === 1) ? SR.Match.cursor - 1 : SR.Match.cursor;
         if (cmd === 'RIGHT') SR.Match.cursor = (SR.Match.cursor % 2 === 0) ? SR.Match.cursor + 1 : SR.Match.cursor;
         if (cmd === 'UP')    SR.Match.cursor = (SR.Match.cursor >= 2) ? SR.Match.cursor - 2 : SR.Match.cursor;
         if (cmd === 'DOWN')  SR.Match.cursor = (SR.Match.cursor <= 1) ? SR.Match.cursor + 2 : SR.Match.cursor;
         if (cmd === 'A')     SR.Match.executeCommand(SR.Match.cursor);
-        return;
-      }
-
-      if (SR.UI.mode !== 'NONE') {
-        SR.UI.handleInput(cmd, this);
         return;
       }
 
@@ -778,6 +793,7 @@ window.SR = window.SR || {};
 
       if (SR.Match.active) {
         SR.Match.render(ctx, this.tick);
+        SR.UI.render(ctx, this, this.tick);
         return;
       }
 
@@ -950,7 +966,7 @@ window.SR = window.SR || {};
       };
 
       window.addEventListener('keydown', (e) => {
-        if (SR.Match.active && !SR.Match.isTextBoxState()) {
+        if (SR.UI.mode === 'NONE' && SR.Match.active && !SR.Match.isTextBoxState()) {
           if (e.key >= '1' && e.key <= '4') {
             e.preventDefault();
             const idx = parseInt(e.key, 10) - 1;
@@ -981,13 +997,17 @@ window.SR = window.SR || {};
         const cx = ((e.clientX - rect.left) / rect.width) * 320;
         const cy = ((e.clientY - rect.top) / rect.height) * 288;
 
-        if (SR.Match.active) {
-          SR.Match.handleCanvasClick(cx, cy);
+        if (SR.UI.mode !== 'NONE') {
+          if (SR.UI.handleCanvasClick) {
+            SR.UI.handleCanvasClick(cx, cy, this);
+          } else {
+            this.handleActionInput('A');
+          }
           return;
         }
 
-        if (SR.UI.mode !== 'NONE') {
-          this.handleActionInput('A');
+        if (SR.Match.active) {
+          SR.Match.handleCanvasClick(cx, cy);
           return;
         }
 
