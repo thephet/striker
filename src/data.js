@@ -1,12 +1,11 @@
 window.SR = window.SR || {};
 
 (function (SR) {
-  // 1. PLAYSTYLE AFFINITIES (Type Triangle: POWER > GRIT > SPEED > TECH > POWER)
+  // 1. PLAYSTYLE AFFINITIES (Classic 3-Style Triangle: POWER > TECH > SPEED > POWER)
   SR.AFFINITIES = {
-    POWER: { id: 'POWER', name: 'Power', icon: 'PWR', color: '#ff595e', beats: 'GRIT' },
-    GRIT:  { id: 'GRIT',  name: 'Grit',  icon: 'GRT', color: '#8ac926', beats: 'SPEED' },
-    SPEED: { id: 'SPEED', name: 'Speed', icon: 'SPD', color: '#ffca3a', beats: 'TECH' },
-    TECH:  { id: 'TECH',  name: 'Tech',  icon: 'TCH', color: '#4cc9f0', beats: 'POWER' }
+    POWER: { id: 'POWER', name: 'Power', icon: 'PWR', color: '#ff595e', beats: 'TECH' },
+    TECH:  { id: 'TECH',  name: 'Tech',  icon: 'TCH', color: '#4cc9f0', beats: 'SPEED' },
+    SPEED: { id: 'SPEED', name: 'Speed', icon: 'SPD', color: '#ffca3a', beats: 'POWER' }
   };
 
   SR.getAffinityAdvantage = function (atkAff, defAff) {
@@ -14,8 +13,8 @@ window.SR = window.SR || {};
     const a = SR.AFFINITIES[atkAff];
     const d = SR.AFFINITIES[defAff];
     if (!a || !d) return { mult: 1.0, tag: '' };
-    if (a.beats === defAff) return { mult: 1.22, tag: `${a.name} > ${d.name} (+22%)` };
-    if (d.beats === atkAff) return { mult: 0.85, tag: `${d.name} resists ${a.name} (-15%)` };
+    if (a.beats === defAff) return { mult: 1.20, tag: `${a.name} > ${d.name} (+20%)` };
+    if (d.beats === atkAff) return { mult: 0.85, tag: `${d.name} > ${a.name} (-15%)` };
     return { mult: 1.0, tag: '' };
   };
 
@@ -115,13 +114,13 @@ window.SR = window.SR || {};
   // 4. STARTER SQUAD (5 Active Starters: GK, DEF, MID-L, MID-R, FWD + 1 Bench Sub)
   SR.STARTER_TEMPLATES = [
     {
-      name: 'Bram', role: 'GK', affinity: 'GRIT', level: 1, sta: 75,
+      name: 'Bram', role: 'GK', affinity: 'POWER', level: 1, sta: 75,
       dri: 10, pas: 14, sho: 8, tac: 15, int: 15, gk: 24,
       skills: ['GOD_HAND'], skin: '#f1c27d', hair: '#d90429',
       bio: 'Fearless street keeper who trained stopping cannonballs at the docks.'
     },
     {
-      name: 'Rocco', role: 'DEF', affinity: 'GRIT', level: 1, sta: 72,
+      name: 'Rocco', role: 'DEF', affinity: 'POWER', level: 1, sta: 72,
       dri: 13, pas: 15, sho: 11, tac: 22, int: 19, gk: 12,
       skills: ['IRON_SLIDE', 'AEGIS_WALL'], skin: '#8d5524', hair: '#1a1a1a',
       bio: 'No-nonsense sweeper known as the Rustyard Brick Wall.'
@@ -208,7 +207,7 @@ window.SR = window.SR || {};
       bio: 'Electric striker who leaves defenders grasping at sparks.'
     },
     {
-      name: 'Bastion', role: 'DEF', affinity: 'GRIT', sta: 82,
+      name: 'Bastion', role: 'DEF', affinity: 'POWER', sta: 82,
       dri: 14, pas: 17, sho: 13, tac: 25, int: 21, gk: 13,
       skills: ['AEGIS_WALL', 'CRUSHER_PRESS'], skin: '#e0ac69', hair: '#2ec4b6', cost: 100,
       bio: 'Veteran anchor who absorbs the hardest shots without flinching.'
@@ -299,7 +298,7 @@ window.SR = window.SR || {};
 
   // 8. GENERATE AN OPPONENT 5-A-SIDE SQUAD
   const STREET_NAMES = ['Viper', 'Torque', 'Slash', 'Blaze', 'Diesel', 'Echo', 'Jett', 'Cobra', 'Spike', 'Zane', 'Raze', 'Flint'];
-  const AFF_LIST = ['POWER', 'SPEED', 'TECH', 'GRIT'];
+  const AFF_LIST = ['POWER', 'TECH', 'SPEED'];
 
   SR.generateEnemyTeam = function (regionId, isBoss, customName) {
     const reg = SR.REGIONS[Math.min(regionId - 1, SR.REGIONS.length - 1)];

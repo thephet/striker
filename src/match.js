@@ -119,13 +119,28 @@ window.SR = window.SR || {};
       return SR.SKILLS[unit.skills[0]] || null;
     },
 
-    // Clean Command Definitions + Structured Side-Box Info (Type, STA Cost, Clear Tactical Tip)
+    // Clean Command Definitions + Structured Side-Box Info (Type, STA Cost, Live Stat Clash, Clear Tip)
     getCommands: function () {
       const p = this.getPlayer();
+      const e = this.getEnemy();
+      const pSquad = this.getPlayerSquad();
+      const eSquad = this.enemyTeam.players;
 
       if (this.subState === 'GK_DEFEND') {
-        const gk = this.getPlayerSquad()[0];
+        const gk = pSquad[0];
+        const shooter = this.incomingShooter || e;
+        const shotPow = this.incomingShotPower;
+        const aff = SR.getAffinityAdvantage(gk.affinity, shooter.affinity);
+        const baseSave = gk.gk * 1.15 + gk.tac * 0.2;
         const sk = this.getAvailableSkill(gk, false, true);
+        const skCost = sk ? sk.cost : 18;
+        const skMult = sk ? sk.mult : 1.45;
+
+        const catchVal = Math.round(baseSave * aff.mult * ((gk.sta - 4) < 15 ? 0.8 : 1.0));
+        const punchVal = Math.round(baseSave * aff.mult * ((gk.sta - 5) < 15 ? 0.8 : 1.0) * 1.16);
+        const skillVal = Math.round(baseSave * aff.mult * ((gk.sta - skCost) < 15 ? 0.8 : 1.0) * skMult);
+        const diveVal = Math.round(baseSave * aff.mult * (Math.min(gk.maxSta, gk.sta + 5) < 15 ? 0.8 : 1.0) * 1.05);
+
         return [
           {
             id: 'GK_CATCH',
@@ -133,6 +148,8 @@ window.SR = window.SR || {};
             moveType: 'SAVE',
             cost: 4,
             unitSta: gk.sta,
+            clashText: `SAVE ${catchVal} vs SHO ${shotPow}`,
+            clashFavored: catchVal >= shotPow,
             tip: 'Hold onto the ball in Defense.'
           },
           {
@@ -141,14 +158,18 @@ window.SR = window.SR || {};
             moveType: 'SAVE',
             cost: 5,
             unitSta: gk.sta,
+            clashText: `SAVE ${punchVal} vs SHO ${shotPow}`,
+            clashFavored: punchVal >= shotPow,
             tip: '+16% Save power. Clears to Midfield.'
           },
           {
             id: 'GK_SKILL',
             label: sk ? `${sk.name} ★` : 'Titan Catch ★',
             moveType: 'SPECIAL',
-            cost: sk ? sk.cost : 18,
+            cost: skCost,
             unitSta: gk.sta,
+            clashText: gk.sta >= skCost ? `SAVE ${skillVal} vs SHO ${shotPow}` : `LOW STA (Need ${skCost})`,
+            clashFavored: gk.sta >= skCost && skillVal >= shotPow,
             tip: sk ? `+${Math.round((sk.mult - 1) * 100)}% GK Save power!` : 'Signature GK save!'
           },
           {
@@ -157,17 +178,57 @@ window.SR = window.SR || {};
             moveType: 'SAVE',
             cost: 0,
             unitSta: gk.sta,
+            clashText: `SAVE ${diveVal} vs SHO ${shotPow}`,
+            clashFavored: diveVal >= shotPow,
             tip: 'Quick dive & recover +5 STA.'
           }
         ];
       }
 
+      const aff = SR.getAffinityAdvantage(p.affinity, e.affinity);
+
       if (this.possession === 'PLAYER') {
         const sk = this.getAvailableSkill(p, true, false);
+        const skCost = sk ? sk.cost : 15;
+        const staModP = (p.sta - 5) < 15 ? 0.78 : 1.0;
+        const staModE = (e.sta - 4) < 15 ? 0.78 : 1.0;
+        const rhythmMult = 1.0 + this.rhythmBonus;
+        const enemyGK = eSquad[0];
+
+        const pDri = Math.round(p.dri * aff.mult * staModP * rhythmMult);
+        const pPas = Math.round(p.pas * aff.mult * staModP * rhythmMult);
+        const eTac = Math.round(e.tac * staModE);
+        const eInt = Math.round(e.int * staModE);
+
+        const distMult = this.zone === 2 ? 1.15 : 0.78;
+        const pSho = Math.round(p.sho * aff.mult * staModP * rhythmMult * distMult);
+        const gkVal = Math.round((enemyGK.gk * 1.12 + enemyGK.int * 0.25) * (enemyGK.sta < 15 ? 0.8 : 1.0));
+
         const shootBtn = this.zone === 2 ? 'Shoot!' : (this.zone === 1 ? 'Long Shot' : 'Clear Ball');
         const shootTip = this.zone === 2
           ? 'Strike at Goal past the Keeper!'
           : (this.zone === 1 ? 'Long-range shot from Midfield.' : 'Safe boot out to Midfield.');
+        const shootClash = this.zone === 0 ? 'SAFE -> MIDFIELD' : `SHO ${pSho} vs GK ${gkVal}`;
+        const shootFavored = this.zone === 0 ? true : (pSho >= gkVal);
+
+        let skClash = `LOW STA (Need ${skCost})`;
+        let skFavored = false;
+        if (sk && p.sta >= skCost) {
+          const staModSk = (p.sta - skCost) < 15 ? 0.78 : 1.0;
+          if (sk.type === 'DRIBBLE') {
+            const v = Math.round(p.dri * aff.mult * staModSk * rhythmMult * sk.mult);
+            skClash = `DRI ${v} vs TAC ${eTac}`;
+            skFavored = v >= eTac;
+          } else if (sk.type === 'PASS') {
+            const v = Math.round(p.pas * aff.mult * staModSk * rhythmMult * sk.mult);
+            skClash = `PAS ${v} vs INT ${eInt}`;
+            skFavored = v >= eInt;
+          } else {
+            const v = Math.round(p.sho * aff.mult * staModSk * rhythmMult * distMult * sk.mult);
+            skClash = `SHO ${v} vs GK ${gkVal}`;
+            skFavored = v >= gkVal;
+          }
+        }
 
         return [
           {
@@ -176,6 +237,8 @@ window.SR = window.SR || {};
             moveType: 'DRIBBLE',
             cost: 5,
             unitSta: p.sta,
+            clashText: `DRI ${pDri} vs TAC ${eTac}`,
+            clashFavored: pDri >= eTac,
             tip: 'Solo run forward. Beats INTERCEPT.'
           },
           {
@@ -184,27 +247,72 @@ window.SR = window.SR || {};
             moveType: 'PASS',
             cost: 5,
             unitSta: p.sta,
+            clashText: `PAS ${pPas} vs INT ${eInt}`,
+            clashFavored: pPas >= eInt,
             tip: 'Pass upfield. Beats TACKLE (+Boost).'
           },
           {
             id: 'SHOOT',
             label: shootBtn,
             moveType: this.zone === 0 ? 'CLEAR' : 'SHOOT',
-            cost: 5,
+            cost: this.zone === 0 ? 4 : 5,
             unitSta: p.sta,
+            clashText: shootClash,
+            clashFavored: shootFavored,
             tip: shootTip
           },
           {
             id: 'SKILL',
             label: sk ? `${sk.name} ★` : 'Special ★',
             moveType: sk ? `${sk.type} ★` : 'SPECIAL',
-            cost: sk ? sk.cost : 15,
+            cost: skCost,
             unitSta: p.sta,
+            clashText: skClash,
+            clashFavored: skFavored,
             tip: sk ? `+${Math.round((sk.mult - 1) * 100)}% ${sk.type} power!` : 'Signature move!'
           }
         ];
       } else {
         const sk = this.getAvailableSkill(p, false, false);
+        const skCost = sk ? sk.cost : 15;
+        const staModP = (p.sta - 5) < 15 ? 0.78 : 1.0;
+        const staModE = (e.sta - 5) < 15 ? 0.78 : 1.0;
+
+        const pTac = Math.round(p.tac * aff.mult * staModP);
+        const pInt = Math.round(p.int * aff.mult * staModP);
+        const eDri = Math.round(e.dri * staModE);
+        const ePas = Math.round(e.pas * staModE);
+        const eSho = Math.round(e.sho * staModE);
+        const eShoCut = Math.round(eSho * 0.65);
+        const pBlk = Math.round((p.tac + p.int) * 0.55 * aff.mult * staModP);
+        const eMaxMove = Math.max(eDri, ePas);
+
+        const blkClash = this.zone === 0
+          ? `FOE SHO ${eSho} -> ${eShoCut}`
+          : `BLK ${pBlk} vs FOE ${eMaxMove}`;
+        const blkFavored = this.zone === 0 ? true : (pBlk >= eMaxMove);
+        const blkTip = this.zone === 0
+          ? 'Cuts incoming Foe Shot by 35%!'
+          : 'Guard stance (Foes shoot in DEF).';
+
+        let skClash = `LOW STA (Need ${skCost})`;
+        let skFavored = false;
+        if (sk && p.sta >= skCost) {
+          const staModSk = (p.sta - skCost) < 15 ? 0.78 : 1.0;
+          if (sk.type === 'TACKLE') {
+            const v = Math.round(p.tac * aff.mult * staModSk * sk.mult);
+            skClash = `TAC ${v} vs DRI ${eDri}`;
+            skFavored = v >= eDri;
+          } else if (sk.type === 'INTERCEPT') {
+            const v = Math.round(p.int * aff.mult * staModSk * sk.mult);
+            skClash = `INT ${v} vs PAS ${ePas}`;
+            skFavored = v >= ePas;
+          } else {
+            skClash = `FOE SHO ${eSho} -> ${Math.round(eSho * 0.45)}`;
+            skFavored = true;
+          }
+        }
+
         return [
           {
             id: 'TACKLE',
@@ -212,6 +320,8 @@ window.SR = window.SR || {};
             moveType: 'TACKLE',
             cost: 5,
             unitSta: p.sta,
+            clashText: `TAC ${pTac} vs DRI ${eDri}`,
+            clashFavored: pTac >= eDri,
             tip: 'Steal the ball. Beats DRIBBLE.'
           },
           {
@@ -220,6 +330,8 @@ window.SR = window.SR || {};
             moveType: 'INTERCEPT',
             cost: 5,
             unitSta: p.sta,
+            clashText: `INT ${pInt} vs PAS ${ePas}`,
+            clashFavored: pInt >= ePas,
             tip: 'Cut passing lane. Beats PASS.'
           },
           {
@@ -228,15 +340,19 @@ window.SR = window.SR || {};
             moveType: 'BLOCK',
             cost: 5,
             unitSta: p.sta,
-            tip: 'Cuts incoming Shot power by 35%.'
+            clashText: blkClash,
+            clashFavored: blkFavored,
+            tip: blkTip
           },
           {
             id: 'SKILL',
             label: sk ? `${sk.name} ★` : 'Special ★',
             moveType: sk ? `${sk.type} ★` : 'SPECIAL',
-            cost: sk ? sk.cost : 15,
+            cost: skCost,
             unitSta: p.sta,
-            tip: sk ? `+${Math.round((sk.mult - 1) * 100)}% ${sk.type} power!` : 'Defensive skill!'
+            clashText: skClash,
+            clashFavored: skFavored,
+            tip: sk ? (sk.type === 'BLOCK' ? 'Cuts Foe Shot power by 55%!' : `+${Math.round((sk.mult - 1) * 100)}% ${sk.type} power!`) : 'Defensive skill!'
           }
         ];
       }
@@ -712,8 +828,8 @@ window.SR = window.SR || {};
         }
       }
 
-      // Draw Pitch Lines & 3 Zone Columns (x: 16..304, y: 74..144)
-      const px = 16, py = 74, pw = 288, ph = 68;
+      // Draw Pitch Lines & 3 Zone Columns (x: 16..304, y: 75..139)
+      const px = 16, py = 75, pw = 288, ph = 64;
       const zw = 96; // 288 / 3
 
       ctx.strokeStyle = 'rgba(255,255,255,0.45)';
@@ -727,7 +843,7 @@ window.SR = window.SR || {};
 
       // Center circle in Midfield
       ctx.beginPath();
-      ctx.arc(px + 144, py + 34, 16, 0, Math.PI * 2);
+      ctx.arc(px + 144, py + 32, 15, 0, Math.PI * 2);
       ctx.stroke();
 
       // Highlight the Active Zone on the Pitch
@@ -746,43 +862,43 @@ window.SR = window.SR || {};
 
       // Left Goal (Your Goal) & Right Goal (Foe Goal)
       ctx.fillStyle = '#4cc9f0';
-      ctx.fillRect(px - 6, py + 20, 6, 28);
+      ctx.fillRect(px - 6, py + 18, 6, 28);
       ctx.strokeStyle = '#ffffff';
-      ctx.strokeRect(px - 6, py + 20, 6, 28);
+      ctx.strokeRect(px - 6, py + 18, 6, 28);
 
       ctx.fillStyle = '#ef476f';
-      ctx.fillRect(px + pw, py + 20, 6, 28);
+      ctx.fillRect(px + pw, py + 18, 6, 28);
       ctx.strokeStyle = '#ffffff';
-      ctx.strokeRect(px + pw, py + 20, 6, 28);
+      ctx.strokeRect(px + pw, py + 18, 6, 28);
 
       // Draw 5v5 Squad Sprites on the Pitch!
-      const playerUnit = this.subState === 'GK_DEFEND' ? this.getPlayerSquad()[0] : this.getPlayer();
-      const enemyUnit = this.subState === 'GK_DEFEND' ? (this.incomingShooter || this.getEnemy()) : this.getEnemy();
       const pSquad = this.getPlayerSquad();
       const eSquad = this.enemyTeam.players;
+      const playerUnit = this.subState === 'GK_DEFEND' ? pSquad[0] : this.getPlayer();
+      const enemyUnit = this.subState === 'GK_DEFEND' ? (this.incomingShooter || this.getEnemy()) : this.getEnemy();
 
       // Base formation coords on the pitch
       const pCoords = [
-        { x: px + 4,   y: py + 26 }, // 0: GK
-        { x: px + 36,  y: py + 26 }, // 1: DEF
-        { x: px + 114, y: py + 14 }, // 2: MID1
-        { x: px + 114, y: py + 40 }, // 3: MID2
-        { x: px + 206, y: py + 26 }  // 4: FWD
+        { x: px + 4,   y: py + 24 }, // 0: GK
+        { x: px + 36,  y: py + 24 }, // 1: DEF
+        { x: px + 114, y: py + 13 }, // 2: MID1
+        { x: px + 114, y: py + 38 }, // 3: MID2
+        { x: px + 206, y: py + 24 }  // 4: FWD
       ];
       const eCoords = [
-        { x: px + pw - 20, y: py + 26 }, // 0: Enemy GK
-        { x: px + 246,     y: py + 26 }, // 1: Enemy DEF
-        { x: px + 158,     y: py + 14 }, // 2: Enemy MID1
-        { x: px + 158,     y: py + 40 }, // 3: Enemy MID2
-        { x: px + 64,      y: py + 26 }  // 4: Enemy FWD
+        { x: px + pw - 20, y: py + 24 }, // 0: Enemy GK
+        { x: px + 246,     y: py + 24 }, // 1: Enemy DEF
+        { x: px + 158,     y: py + 13 }, // 2: Enemy MID1
+        { x: px + 158,     y: py + 38 }, // 3: Enemy MID2
+        { x: px + 64,      y: py + 24 }  // 4: Enemy FWD
       ];
 
       // Snap active duelists face-to-face inside the active zone!
       const duelCenterX = px + activeZ * zw + 48;
       const activePIdx = this.subState === 'GK_DEFEND' ? 0 : this.activePlayerIdx;
       const activeEIdx = this.subState === 'GK_DEFEND' ? 4 : this.activeEnemyIdx;
-      pCoords[activePIdx] = { x: duelCenterX - 22, y: py + 26 };
-      eCoords[activeEIdx] = { x: duelCenterX + 6,  y: py + 26 };
+      pCoords[activePIdx] = { x: duelCenterX - 22, y: py + 24 };
+      eCoords[activeEIdx] = { x: duelCenterX + 6,  y: py + 24 };
 
       // Draw Spotlight Rings under the two active duelists
       ctx.strokeStyle = '#ffd166';
@@ -811,15 +927,17 @@ window.SR = window.SR || {};
         }, tick);
       }
 
-      // 3. POKÉMON GBA FLOATING HUD PLATES (Clean Name + Role + Style + Stamina Bar!)
-      // Top-Left: Opponent Active Player Plate
-      this.drawHudPlate(ctx, 8, 26, enemyUnit, false);
+      // 3. POKÉMON GBA FLOATING HUD PLATES (Name + Style + Stamina + Contextual 3 Stats!)
+      const playerIsAttacking = (this.possession === 'PLAYER' && this.subState !== 'GK_DEFEND');
 
-      // Top-Right: Clear, High-Contrast Style Matchup Pill!
-      this.drawStyleMatchupBadge(ctx, 160, 26, playerUnit, enemyUnit);
+      // Top-Left: Opponent Active Player Plate
+      this.drawHudPlate(ctx, 6, 24, enemyUnit, false, !playerIsAttacking, eSquad[0]);
+
+      // Top-Right: Style Bonus/Penalty Pill (hidden when Even!)
+      this.drawStyleMatchupBadge(ctx, 162, 24, playerUnit, enemyUnit);
 
       // Bottom-Right: Your Active Player Plate
-      this.drawHudPlate(ctx, 164, 148, playerUnit, true);
+      this.drawHudPlate(ctx, 162, 143, playerUnit, true, playerIsAttacking, pSquad[0]);
 
       // 4. BOTTOM CLASSIC GBA BOX (y: 196..288) — Switches cleanly between Text Box & Command Menu!
       ctx.fillStyle = '#0b0e16';
@@ -834,48 +952,74 @@ window.SR = window.SR || {};
       }
     },
 
-    drawHudPlate: function (ctx, x, y, unit, isPlayer) {
-      const w = 148, h = 42;
-      ctx.fillStyle = 'rgba(13, 17, 26, 0.92)';
+    drawHudPlate: function (ctx, x, y, unit, isPlayer, isAttacking, teamGK) {
+      const w = 152, h = 49;
+      ctx.fillStyle = 'rgba(13, 17, 26, 0.94)';
       ctx.fillRect(x, y, w, h);
       ctx.strokeStyle = isPlayer ? '#3a86ff' : '#ef476f';
       ctx.lineWidth = 1.5;
       ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
       ctx.lineWidth = 1;
 
-      // Row 1: Player Name & Role
+      // Row 1: Player Name, Rhythm Boost (if active), & Role
       ctx.fillStyle = '#ffffff';
       ctx.font = 'bold 9px monospace';
-      ctx.fillText(`${unit.name.slice(0, 12)}`, x + 6, y + 13);
+      ctx.fillText(`${unit.name.slice(0, 11)}`, x + 6, y + 12);
+
+      if (isPlayer && this.rhythmBonus > 0 && this.subState !== 'GK_DEFEND') {
+        ctx.fillStyle = '#ffd166';
+        ctx.font = 'bold 8px monospace';
+        ctx.fillText(`+${Math.round(this.rhythmBonus * 100)}%`, x + 84, y + 12);
+      }
 
       ctx.fillStyle = '#94a3b8';
       ctx.font = 'bold 8px monospace';
-      ctx.fillText(`[${unit.role}]`, x + 112, y + 13);
+      ctx.fillText(`[${unit.role}]`, x + 118, y + 12);
 
-      // Row 2: Full Style Name Badge + Stamina Bar
+      // Row 2: Style Badge + Stamina Bar
       const aff = SR.AFFINITIES[unit.affinity] || SR.AFFINITIES.SPEED;
       ctx.fillStyle = aff.color;
-      ctx.fillRect(x + 6, y + 19, 40, 12);
+      ctx.fillRect(x + 6, y + 17, 40, 12);
       ctx.fillStyle = '#090c12';
       ctx.font = 'bold 8px monospace';
-      ctx.fillText(aff.name.toUpperCase(), x + 9, y + 28);
+      ctx.fillText(aff.name.toUpperCase(), x + 8, y + 26);
 
-      // Stamina Bar
       ctx.fillStyle = '#1e293b';
-      ctx.fillRect(x + 52, y + 20, 88, 10);
+      ctx.fillRect(x + 51, y + 18, 94, 10);
       const pct = Math.max(0, Math.min(1, unit.sta / unit.maxSta));
       ctx.fillStyle = pct > 0.35 ? '#06d6a0' : '#ef476f';
-      ctx.fillRect(x + 52, y + 20, Math.round(88 * pct), 10);
+      ctx.fillRect(x + 51, y + 18, Math.round(94 * pct), 10);
 
       ctx.fillStyle = '#ffffff';
       ctx.font = 'bold 7px monospace';
-      ctx.fillText(`STA ${unit.sta}/${unit.maxSta}`, x + 62, y + 28);
+      ctx.fillText(`STA ${unit.sta}/${unit.maxSta}`, x + 64, y + 26);
 
-      // Pass Rhythm indicator on Player Plate
-      if (isPlayer && this.rhythmBonus > 0) {
-        ctx.fillStyle = '#ffd166';
-        ctx.font = 'bold 7px monospace';
-        ctx.fillText(`★ PASS BOOST +${Math.round(this.rhythmBonus * 100)}%`, x + 6, y + 39);
+      // Subtle Divider
+      ctx.fillStyle = '#1e293b';
+      ctx.fillRect(x + 6, y + 33, w - 12, 1);
+
+      // Row 3: Contextual 3 Stats (Attack: DRI/PAS/SHO | Defense: TAC/INT/GK)
+      const gkStat = teamGK ? teamGK.gk : unit.gk;
+      const stats = isAttacking
+        ? [
+            { k: 'DRI', v: unit.dri },
+            { k: 'PAS', v: unit.pas },
+            { k: 'SHO', v: unit.sho }
+          ]
+        : [
+            { k: 'TAC', v: unit.tac },
+            { k: 'INT', v: unit.int },
+            { k: 'GK',  v: gkStat }
+          ];
+
+      ctx.font = 'bold 8px monospace';
+      for (let s = 0; s < 3; s++) {
+        const sx = x + 6 + s * 48;
+        ctx.fillStyle = isAttacking ? '#7dd3fc' : '#cbd5e1';
+        ctx.fillText(stats[s].k, sx, y + 44);
+        const labelW = ctx.measureText(stats[s].k).width;
+        ctx.fillStyle = '#ffffff';
+        ctx.fillText(String(stats[s].v), sx + labelW + 4, y + 44);
       }
     },
 
@@ -884,7 +1028,10 @@ window.SR = window.SR || {};
       const eAff = SR.AFFINITIES[eUnit.affinity] || SR.AFFINITIES.SPEED;
       const adv = SR.getAffinityAdvantage(pUnit.affinity, eUnit.affinity);
 
-      ctx.fillStyle = 'rgba(13, 17, 26, 0.92)';
+      // Hide box completely when styles are identical (no bonus or penalty)
+      if (adv.mult === 1) return;
+
+      ctx.fillStyle = 'rgba(13, 17, 26, 0.94)';
       ctx.fillRect(x, y, 152, 30);
 
       if (adv.mult > 1) {
@@ -892,25 +1039,17 @@ window.SR = window.SR || {};
         ctx.strokeRect(x + 0.5, y + 0.5, 151, 29);
         ctx.fillStyle = '#06d6a0';
         ctx.font = 'bold 8px monospace';
-        ctx.fillText(`STYLE ADVANTAGE (+22%)`, x + 8, y + 12);
+        ctx.fillText('STYLE BONUS (+20%)', x + 8, y + 12);
         ctx.fillStyle = '#ffffff';
         ctx.fillText(`Your ${pAff.name} beats ${eAff.name}`, x + 8, y + 24);
-      } else if (adv.mult < 1) {
+      } else {
         ctx.strokeStyle = '#ffca3a';
         ctx.strokeRect(x + 0.5, y + 0.5, 151, 29);
         ctx.fillStyle = '#ffca3a';
         ctx.font = 'bold 8px monospace';
-        ctx.fillText(`STYLE DISADVANTAGE (-15%)`, x + 8, y + 12);
+        ctx.fillText('STYLE PENALTY (-15%)', x + 8, y + 12);
         ctx.fillStyle = '#ffffff';
         ctx.fillText(`Foe ${eAff.name} beats ${pAff.name}`, x + 8, y + 24);
-      } else {
-        ctx.strokeStyle = '#475569';
-        ctx.strokeRect(x + 0.5, y + 0.5, 151, 29);
-        ctx.fillStyle = '#94a3b8';
-        ctx.font = 'bold 8px monospace';
-        ctx.fillText(`STYLE MATCHUP: EVEN`, x + 8, y + 13);
-        ctx.fillStyle = '#cbd5e1';
-        ctx.fillText(`${pAff.name} vs ${eAff.name}`, x + 8, y + 24);
       }
     },
 
@@ -977,28 +1116,33 @@ window.SR = window.SR || {};
       ctx.strokeStyle = '#4cc9f0';
       ctx.strokeRect(199.5, 201.5, 114, 79);
 
-      // Move Type Header
+      // Row 1: Move Type (left) + Stamina Cost (right-aligned)
+      ctx.font = 'bold 8px monospace';
       ctx.fillStyle = '#ffd166';
-      ctx.font = 'bold 8px monospace';
-      ctx.fillText(`TYPE: ${active.moveType}`, 205, 215);
+      ctx.fillText(active.moveType, 205, 213);
 
-      // Explicit Stamina Cost Line!
       const canAfford = active.unitSta >= active.cost;
-      ctx.fillStyle = canAfford ? '#06d6a0' : '#ef476f';
+      const costStr = active.cost > 0
+        ? (canAfford ? `${active.cost} STA` : `${active.cost} STA!`)
+        : 'FREE';
+      ctx.fillStyle = canAfford ? '#94a3b8' : '#ef476f';
+      const costW = ctx.measureText(costStr).width;
+      ctx.fillText(costStr, 309 - costW, 213);
+
+      // Row 2: Live Effective Stat Clash Preview!
+      const isBlockedSkill = !canAfford && (active.id === 'SKILL' || active.id === 'GK_SKILL');
+      ctx.fillStyle = isBlockedSkill ? '#ef476f' : (active.clashFavored ? '#06d6a0' : '#ffca3a');
       ctx.font = 'bold 8px monospace';
-      const costText = active.cost > 0
-        ? (canAfford ? `COST: ${active.cost} STA` : `NEED ${active.cost} STA!`)
-        : 'COST: FREE';
-      ctx.fillText(costText, 205, 229);
+      ctx.fillText(active.clashText || '', 205, 227);
 
       // Divider line
       ctx.fillStyle = '#334155';
-      ctx.fillRect(205, 234, 103, 1);
+      ctx.fillRect(205, 233, 104, 1);
 
       // Wrapped Tactical Tip
       ctx.fillStyle = '#e2e8f0';
       ctx.font = '8px monospace';
-      this.drawWrappedText(ctx, active.tip, 205, 246, 104, 11, 3);
+      this.drawWrappedText(ctx, active.tip, 205, 245, 104, 11, 3);
     },
 
     drawWrappedText: function (ctx, text, x, y, maxWidth, lineHeight, maxLines) {

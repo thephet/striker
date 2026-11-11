@@ -683,9 +683,9 @@ window.SR = window.SR || {};
 
       ctx.fillStyle = '#ffca3a';
       ctx.font = 'bold 9px monospace';
-      ctx.fillText('STYLE AFFINITY CHART (+22% Advantage):', 18, 204);
+      ctx.fillText('PLAYER STYLE TRIANGLE (+20% Advantage):', 18, 204);
       ctx.fillStyle = '#cbd5e1';
-      ctx.fillText('POWER (PWR) > GRIT (GRT) > SPEED (SPD) > TECH (TCH) > POWER', 18, 218);
+      ctx.fillText('POWER beats TECH  •  TECH beats SPEED  •  SPEED beats POWER', 18, 218);
 
       ctx.fillStyle = '#ffd166';
       ctx.fillText('Press [A / B / Q] to Close', 92, 266);
