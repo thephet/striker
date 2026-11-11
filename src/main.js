@@ -181,7 +181,7 @@ window.SR = window.SR || {};
 
     handleActionInput: function (cmd) {
       if (SR.Match.active) {
-        if (SR.Match.subState === 'ANIM_RESULT' || SR.Match.subState === 'MATCH_OVER') {
+        if (SR.Match.isTextBoxState()) {
           if (cmd === 'A' || cmd === 'B' || cmd === 'START') {
             SR.Match.executeCommand(0);
           }
@@ -950,7 +950,7 @@ window.SR = window.SR || {};
       };
 
       window.addEventListener('keydown', (e) => {
-        if (SR.Match.active && SR.Match.subState !== 'ANIM_RESULT' && SR.Match.subState !== 'MATCH_OVER') {
+        if (SR.Match.active && !SR.Match.isTextBoxState()) {
           if (e.key >= '1' && e.key <= '4') {
             e.preventDefault();
             const idx = parseInt(e.key, 10) - 1;
@@ -982,20 +982,7 @@ window.SR = window.SR || {};
         const cy = ((e.clientY - rect.top) / rect.height) * 288;
 
         if (SR.Match.active) {
-          if (SR.Match.subState === 'ANIM_RESULT' || SR.Match.subState === 'MATCH_OVER') {
-            SR.Match.executeCommand(0);
-            return;
-          }
-          if (cy >= 210) {
-            const col = cx >= 160 ? 1 : 0;
-            const row = cy >= 240 ? 1 : 0;
-            const idx = row * 2 + col;
-            if (SR.Match.cursor === idx) {
-              SR.Match.executeCommand(idx);
-            } else {
-              SR.Match.cursor = idx;
-            }
-          }
+          SR.Match.handleCanvasClick(cx, cy);
           return;
         }
 

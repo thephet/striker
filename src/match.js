@@ -1,7 +1,7 @@
 window.SR = window.SR || {};
 
 (function (SR) {
-  // Match Engine State
+  // Clean Pokémon GBA 2-Part Match Engine
   SR.Match = {
     active: false,
     enemyTeam: null,
@@ -18,22 +18,30 @@ window.SR = window.SR || {};
     zone: 1,
     // possession: 'PLAYER' | 'ENEMY'
     possession: 'PLAYER',
-    // subState: 'COMMAND' | 'GK_DEFEND' | 'ANIM_RESULT' | 'MATCH_OVER'
-    subState: 'COMMAND',
+    // subState: 'INTRO' | 'COMMAND' | 'GK_DEFEND' | 'ANIM_RESULT' | 'MATCH_OVER'
+    subState: 'INTRO',
 
     // Active indices in the 5-man lineup [0:GK, 1:DEF, 2:MID1, 3:MID2, 4:FWD]
     activePlayerIdx: 2,
     activeEnemyIdx: 2,
-    rhythmBonus: 0, // +0.15 after a successful pass
+    rhythmBonus: 0,
     incomingShotPower: 0,
     incomingShooter: null,
 
-    cursor: 0, // 0..3 in the 2x2 command box
-    logLines: [],
-    bannerText: '',
-    bannerColor: '#ffd166',
+    cursor: 0, // 0..3 in the 2x2 command grid
+    resultHeadline: '',
+    resultColor: '#ffd166',
+    resultBody: '',
     flashTimer: 0,
     flashColor: '#ffffff',
+
+    isTextBoxState: function () {
+      return (
+        this.subState === 'INTRO' ||
+        this.subState === 'ANIM_RESULT' ||
+        this.subState === 'MATCH_OVER'
+      );
+    },
 
     start: function (game, enemyTeam, opts, onComplete) {
       this.game = game;
@@ -50,26 +58,21 @@ window.SR = window.SR || {};
 
       this.zone = 1; // Kickoff in Midfield
       this.possession = 'PLAYER';
-      this.subState = 'COMMAND';
+      this.subState = 'INTRO';
       this.activePlayerIdx = 2; // Captain / MID1 starts with the ball
       this.activeEnemyIdx = 2;
       this.rhythmBonus = 0;
       this.cursor = 0;
-      this.bannerText = 'KICK OFF! MIDFIELD PHASE';
-      this.bannerColor = '#ffd166';
       this.flashTimer = 0;
 
-      const modeDesc = this.isBoss
-        ? `BOSS MATCH: First to ${this.goalsToWin} Goals (or Lead at ${this.maxTurns} Turns)`
-        : `STREET MATCH: First to ${this.goalsToWin} Goals (or ${this.maxTurns} Turns)`;
-      this.logLines = [
-        `VS ${enemyTeam.name}! ${modeDesc}`,
-        `${this.getPlayer().name} takes the kickoff in MIDFIELD!`
-      ];
+      const goalWord = this.goalsToWin === 1 ? '1 Goal' : `${this.goalsToWin} Goals`;
+      this.resultHeadline = `VS ${enemyTeam.name.toUpperCase()}`;
+      this.resultColor = '#ffd166';
+      this.resultBody = `First to ${goalWord} wins (up to ${this.maxTurns} turns)! ${this.getPlayer().name} takes the kickoff in Midfield.`;
     },
 
     getPlayerSquad: function () {
-      return this.game.squad.slice(0, 5); // Active 5 starters
+      return this.game.squad.slice(0, 5);
     },
 
     getPlayer: function () {
@@ -82,26 +85,16 @@ window.SR = window.SR || {};
       return eq[this.activeEnemyIdx] || eq[0];
     },
 
-    // Assign default zone matchups when entering a zone
     syncMatchupForZone: function () {
       if (this.zone === 0) {
-        // Player Defense vs Enemy Attack
-        if (this.possession === 'ENEMY') {
-          this.activePlayerIdx = 1; // Player DEF
-          this.activeEnemyIdx = 4;  // Enemy FWD
-        } else {
-          // Player recovering ball in own defense
-          this.activePlayerIdx = 1;
-          this.activeEnemyIdx = 4;
-        }
+        this.activePlayerIdx = 1; // Player DEF
+        this.activeEnemyIdx = 4;  // Enemy FWD
       } else if (this.zone === 1) {
-        // Midfield
         if (this.activePlayerIdx !== 2 && this.activePlayerIdx !== 3) {
           this.activePlayerIdx = 2;
         }
         this.activeEnemyIdx = (this.turn % 2 === 0) ? 3 : 2;
       } else if (this.zone === 2) {
-        // Player Attack vs Enemy Defense
         if (this.possession === 'PLAYER') {
           if (this.activePlayerIdx !== 4 && this.activePlayerIdx !== 3) {
             this.activePlayerIdx = 4; // Player FWD
@@ -123,47 +116,138 @@ window.SR = window.SR || {};
         if (isOffense && (sk.type === 'DRIBBLE' || sk.type === 'PASS' || sk.type === 'SHOOT')) return sk;
         if (!isOffense && !isGK && (sk.type === 'TACKLE' || sk.type === 'INTERCEPT' || sk.type === 'BLOCK')) return sk;
       }
-      // Fallback to first skill
       return SR.SKILLS[unit.skills[0]] || null;
     },
 
+    // Clean Command Definitions + Structured Side-Box Info (Type, STA Cost, Clear Tactical Tip)
     getCommands: function () {
       const p = this.getPlayer();
+
       if (this.subState === 'GK_DEFEND') {
         const gk = this.getPlayerSquad()[0];
         const sk = this.getAvailableSkill(gk, false, true);
-        const skLabel = sk ? `${sk.name} (${sk.cost}MP)` : 'Aura Catch (15MP)';
         return [
-          { id: 'GK_CATCH', label: '1. CATCH HOLD', desc: 'Catch & keep ball in Defense' },
-          { id: 'GK_PUNCH', label: '2. PUNCH CLEAR', desc: '+15% Save Power, clears to Midfield' },
-          { id: 'GK_SKILL', label: `3. ${skLabel}`, desc: sk ? sk.desc : 'Special GK Save!' },
-          { id: 'GK_DIVE',  label: '4. REFLEX DIVE', desc: 'Balanced dive +5 Stamina recovery' }
+          {
+            id: 'GK_CATCH',
+            label: 'Catch Hold',
+            moveType: 'SAVE',
+            cost: 4,
+            unitSta: gk.sta,
+            tip: 'Hold onto the ball in Defense.'
+          },
+          {
+            id: 'GK_PUNCH',
+            label: 'Punch Clear',
+            moveType: 'SAVE',
+            cost: 5,
+            unitSta: gk.sta,
+            tip: '+16% Save power. Clears to Midfield.'
+          },
+          {
+            id: 'GK_SKILL',
+            label: sk ? `${sk.name} ★` : 'Titan Catch ★',
+            moveType: 'SPECIAL',
+            cost: sk ? sk.cost : 18,
+            unitSta: gk.sta,
+            tip: sk ? `+${Math.round((sk.mult - 1) * 100)}% GK Save power!` : 'Signature GK save!'
+          },
+          {
+            id: 'GK_DIVE',
+            label: 'Reflex Dive',
+            moveType: 'SAVE',
+            cost: 0,
+            unitSta: gk.sta,
+            tip: 'Quick dive & recover +5 STA.'
+          }
         ];
       }
 
       if (this.possession === 'PLAYER') {
         const sk = this.getAvailableSkill(p, true, false);
-        const shootLabel = this.zone === 2 ? '3. SHOOT GOAL!' : (this.zone === 1 ? '3. LONG SHOT' : '3. CLEAR UPFIELD');
-        const skLabel = sk ? `4. ${sk.name} (${sk.cost})` : '4. SPECIAL MOVE';
+        const shootBtn = this.zone === 2 ? 'Shoot!' : (this.zone === 1 ? 'Long Shot' : 'Clear Ball');
+        const shootTip = this.zone === 2
+          ? 'Strike at Goal past the Keeper!'
+          : (this.zone === 1 ? 'Long-range shot from Midfield.' : 'Safe boot out to Midfield.');
+
         return [
-          { id: 'DRIBBLE', label: '1. DRIBBLE', desc: 'Advance solo (Beats INTERCEPT +25%)' },
-          { id: 'PASS',    label: '2. PASS',    desc: 'Pass ahead (Beats TACKLE +25%, +Rhythm)' },
-          { id: 'SHOOT',   label: shootLabel,   desc: this.zone === 2 ? 'Strike at Goal!' : (this.zone === 1 ? 'Long distance shot' : 'Safe clear to Midfield') },
-          { id: 'SKILL',   label: skLabel,      desc: sk ? sk.desc : 'Signature offensive move' }
+          {
+            id: 'DRIBBLE',
+            label: 'Dribble',
+            moveType: 'DRIBBLE',
+            cost: 5,
+            unitSta: p.sta,
+            tip: 'Solo run forward. Beats INTERCEPT.'
+          },
+          {
+            id: 'PASS',
+            label: 'Pass',
+            moveType: 'PASS',
+            cost: 5,
+            unitSta: p.sta,
+            tip: 'Pass upfield. Beats TACKLE (+Boost).'
+          },
+          {
+            id: 'SHOOT',
+            label: shootBtn,
+            moveType: this.zone === 0 ? 'CLEAR' : 'SHOOT',
+            cost: 5,
+            unitSta: p.sta,
+            tip: shootTip
+          },
+          {
+            id: 'SKILL',
+            label: sk ? `${sk.name} ★` : 'Special ★',
+            moveType: sk ? `${sk.type} ★` : 'SPECIAL',
+            cost: sk ? sk.cost : 15,
+            unitSta: p.sta,
+            tip: sk ? `+${Math.round((sk.mult - 1) * 100)}% ${sk.type} power!` : 'Signature move!'
+          }
         ];
       } else {
         const sk = this.getAvailableSkill(p, false, false);
-        const skLabel = sk ? `4. ${sk.name} (${sk.cost})` : '4. SPECIAL DEF';
         return [
-          { id: 'TACKLE',    label: '1. TACKLE',    desc: 'Steal ball (Beats DRIBBLE +25%)' },
-          { id: 'INTERCEPT', label: '2. INTERCEPT', desc: 'Cut pass (Beats PASS +25%)' },
-          { id: 'BLOCK',     label: '3. BLOCK WALL', desc: 'Cut enemy Shot power by 35%' },
-          { id: 'SKILL',     label: skLabel,         desc: sk ? sk.desc : 'Signature defensive move' }
+          {
+            id: 'TACKLE',
+            label: 'Tackle',
+            moveType: 'TACKLE',
+            cost: 5,
+            unitSta: p.sta,
+            tip: 'Steal the ball. Beats DRIBBLE.'
+          },
+          {
+            id: 'INTERCEPT',
+            label: 'Intercept',
+            moveType: 'INTERCEPT',
+            cost: 5,
+            unitSta: p.sta,
+            tip: 'Cut passing lane. Beats PASS.'
+          },
+          {
+            id: 'BLOCK',
+            label: 'Block Wall',
+            moveType: 'BLOCK',
+            cost: 5,
+            unitSta: p.sta,
+            tip: 'Cuts incoming Shot power by 35%.'
+          },
+          {
+            id: 'SKILL',
+            label: sk ? `${sk.name} ★` : 'Special ★',
+            moveType: sk ? `${sk.type} ★` : 'SPECIAL',
+            cost: sk ? sk.cost : 15,
+            unitSta: p.sta,
+            tip: sk ? `+${Math.round((sk.mult - 1) * 100)}% ${sk.type} power!` : 'Defensive skill!'
+          }
         ];
       }
     },
 
     executeCommand: function (cmdIndex) {
+      if (this.subState === 'INTRO') {
+        this.subState = 'COMMAND';
+        this.cursor = 0;
+        return;
+      }
       if (this.subState === 'ANIM_RESULT') {
         this.advanceAfterPause();
         return;
@@ -188,28 +272,42 @@ window.SR = window.SR || {};
       }
     },
 
+    handleCanvasClick: function (cx, cy) {
+      if (this.isTextBoxState()) {
+        this.executeCommand(0);
+        return;
+      }
+      // Left 2x2 command grid sits at x: 6..194, y: 200..282
+      if (cy >= 198 && cx <= 198) {
+        const col = cx >= 101 ? 1 : 0;
+        const row = cy >= 241 ? 1 : 0;
+        const idx = row * 2 + col;
+        if (this.cursor === idx) {
+          this.executeCommand(idx);
+        } else {
+          this.cursor = idx;
+        }
+      }
+    },
+
     // PLAYER HAS THE BALL (OFFENSE)
     resolvePlayerOffense: function (cmdId) {
       const p = this.getPlayer();
       const e = this.getEnemy();
 
-      // Special case: In Zone 0 (Defense), "SHOOT" is a safe Clearance to Midfield
+      // Safe Clearance from Defense to Midfield
       if (cmdId === 'SHOOT' && this.zone === 0) {
         p.sta = Math.max(0, p.sta - 4);
         this.zone = 1;
         this.activePlayerIdx = 2;
         this.syncMatchupForZone();
-        this.bannerText = 'LONG CLEARANCE TO MIDFIELD!';
-        this.bannerColor = '#4cc9f0';
-        this.logLines = [
-          `${p.name} boots a high clearance out of danger!`,
-          `${this.getPlayer().name} controls the ball in MIDFIELD!`
-        ];
+        this.resultHeadline = 'CLEARED TO MIDFIELD!';
+        this.resultColor = '#4cc9f0';
+        this.resultBody = `${p.name} boots the ball out of danger! ${this.getPlayer().name} controls it in Midfield.`;
         this.subState = 'ANIM_RESULT';
         return;
       }
 
-      // Check Special Skill
       let usedSkill = null;
       let baseType = cmdId;
       if (cmdId === 'SKILL') {
@@ -221,14 +319,13 @@ window.SR = window.SR || {};
           this.flashTimer = 18;
           this.flashColor = sk.color;
         } else {
-          // Not enough stamina -> fallback to Dribble/Shoot
           baseType = this.zone === 2 ? 'SHOOT' : 'DRIBBLE';
+          p.sta = Math.max(0, p.sta - 5);
         }
       } else {
         p.sta = Math.max(0, p.sta - 5);
       }
 
-      // Enemy AI picks a defensive reaction: TACKLE, INTERCEPT, or BLOCK
       const aiChoices = this.zone === 2 ? ['TACKLE', 'INTERCEPT', 'BLOCK'] : ['TACKLE', 'INTERCEPT'];
       const enemyCmd = aiChoices[Math.floor(Math.random() * aiChoices.length)];
       e.sta = Math.max(0, e.sta - 4);
@@ -239,88 +336,72 @@ window.SR = window.SR || {};
       const skillMult = usedSkill ? usedSkill.mult : 1.0;
       const rhythmMult = 1.0 + this.rhythmBonus;
 
-      // If command is SHOOT -> test vs Block & Goalkeeper!
       if (baseType === 'SHOOT') {
-        const distMult = this.zone === 2 ? 1.15 : 0.78; // Attack zone vs Long Shot
+        const distMult = this.zone === 2 ? 1.15 : 0.78;
         let shotPow = p.sho * aff.mult * staPenaltyP * skillMult * rhythmMult * distMult;
         shotPow *= (0.92 + Math.random() * 0.18);
 
         let blockNote = '';
         if (enemyCmd === 'BLOCK') {
           shotPow *= 0.70;
-          blockNote = ` (${e.name} BLOCKED -30%!)`;
+          blockNote = ` ${e.name} blocked part of it!`;
         }
 
         const enemyGK = this.enemyTeam.players[0];
-        const gkAff = SR.getAffinityAdvantage(p.affinity, enemyGK.affinity);
         const gkPow = (enemyGK.gk * 1.12 + enemyGK.int * 0.25) * (enemyGK.sta < 15 ? 0.8 : 1.0) * (0.9 + Math.random() * 0.2);
         enemyGK.sta = Math.max(0, enemyGK.sta - 6);
         this.rhythmBonus = 0;
 
-        const moveTitle = usedSkill ? usedSkill.name.toUpperCase() : 'SHOT';
+        const moveTitle = usedSkill ? usedSkill.name : 'a powerful shot';
         if (shotPow >= gkPow) {
-          // GOAL SCORED!
           this.playerScore++;
           this.flashTimer = 24;
           this.flashColor = '#ffd166';
-          this.bannerText = `GOAL!! ${p.name.toUpperCase()} SCORES! (${Math.round(shotPow)} vs GK ${Math.round(gkPow)})`;
-          this.bannerColor = '#06d6a0';
-          this.logLines = [
-            `${p.name} unleashes ${moveTitle}! Power ${Math.round(shotPow)}${blockNote}`,
-            `Past GK ${enemyGK.name} (${Math.round(gkPow)}) — GOOOAAAL!! (${this.playerScore}-${this.enemyScore})`
-          ];
+          this.resultHeadline = `GOAL!! ${p.name.toUpperCase()} SCORES! (${this.playerScore} - ${this.enemyScore})`;
+          this.resultColor = '#06d6a0';
+          this.resultBody = `${p.name} fires ${moveTitle} (${Math.round(shotPow)}) right past GK ${enemyGK.name} (${Math.round(gkPow)})!`;
           this.resetAfterGoal('ENEMY');
         } else {
-          // SAVED BY ENEMY GK!
           this.possession = 'ENEMY';
-          this.zone = 1; // Enemy GK launches counter to Midfield
+          this.zone = 1;
           this.syncMatchupForZone();
-          this.bannerText = `SAVED BY GK ${enemyGK.name.toUpperCase()}! (${Math.round(gkPow)} vs ${Math.round(shotPow)})`;
-          this.bannerColor = '#ef476f';
-          this.logLines = [
-            `${p.name} fires ${moveTitle} (${Math.round(shotPow)})${blockNote}`,
-            `GK ${enemyGK.name} makes a diving save (${Math.round(gkPow)}) and launches a counter!`
-          ];
+          this.resultHeadline = `SAVED BY GK ${enemyGK.name.toUpperCase()}!`;
+          this.resultColor = '#ef476f';
+          this.resultBody = `${p.name} fires ${moveTitle} (${Math.round(shotPow)}).${blockNote} GK ${enemyGK.name} saves (${Math.round(gkPow)}) and launches a counter!`;
           this.subState = 'ANIM_RESULT';
         }
         return;
       }
 
-      // Otherwise DRIBBLE or PASS duel!
       const atkStat = baseType === 'PASS' ? p.pas : p.dri;
       const defStat = enemyCmd === 'INTERCEPT' ? e.int : (enemyCmd === 'TACKLE' ? e.tac : (e.tac + e.int) * 0.5);
 
-      // Tactical Read Triangle:
-      // PASS beats TACKLE (+25%), DRIBBLE beats INTERCEPT (+25%), TACKLE beats DRIBBLE (+25%), INTERCEPT beats PASS (+25%)
       let tacMultP = 1.0;
       let tacMultE = 1.0;
       let tacNote = '';
       if (baseType === 'PASS' && enemyCmd === 'TACKLE') {
         tacMultP = 1.25;
-        tacNote = 'TACTICAL READ! Pass beats Tackle (+25%)';
+        tacNote = 'Smart read: Pass beat Tackle!';
       } else if (baseType === 'DRIBBLE' && enemyCmd === 'INTERCEPT') {
         tacMultP = 1.25;
-        tacNote = 'TACTICAL READ! Dribble beats Intercept (+25%)';
+        tacNote = 'Smart read: Dribble beat Intercept!';
       } else if (baseType === 'DRIBBLE' && enemyCmd === 'TACKLE') {
         tacMultE = 1.22;
-        tacNote = `COUNTERED! ${e.name}'s Tackle reads Dribble!`;
+        tacNote = `${e.name}'s Tackle countered your Dribble!`;
       } else if (baseType === 'PASS' && enemyCmd === 'INTERCEPT') {
         tacMultE = 1.22;
-        tacNote = `COUNTERED! ${e.name}'s Intercept reads Pass!`;
+        tacNote = `${e.name} intercepted your Pass!`;
       }
 
       const atkRoll = Math.round(atkStat * aff.mult * staPenaltyP * skillMult * rhythmMult * tacMultP * (0.9 + Math.random() * 0.2));
       const defRoll = Math.round(defStat * staPenaltyE * tacMultE * (0.9 + Math.random() * 0.2));
-
-      const actionTitle = usedSkill ? usedSkill.name : baseType;
+      const actionTitle = usedSkill ? usedSkill.name : (baseType === 'PASS' ? 'Pass' : 'Dribble');
 
       if (atkRoll >= defRoll) {
-        // PLAYER WINS THE PHASE DUEL!
         this.rhythmBonus = (baseType === 'PASS') ? 0.15 : 0.05;
         const oldZone = this.zone;
         this.zone = Math.min(2, this.zone + 1);
 
-        // Pick receiver if PASS or advancing zone
         if (this.zone === 1) {
           this.activePlayerIdx = (this.activePlayerIdx === 2) ? 3 : 2;
         } else if (this.zone === 2) {
@@ -328,24 +409,17 @@ window.SR = window.SR || {};
         }
         this.syncMatchupForZone();
 
-        const nextZoneName = this.zone === 1 ? 'MIDFIELD' : 'ATTACK ZONE';
-        this.bannerText = `DUEL WON! (${atkRoll} vs ${defRoll}) -> ${nextZoneName}`;
-        this.bannerColor = '#06d6a0';
-        this.logLines = [
-          `${p.name} used ${actionTitle} (${atkRoll}) vs ${e.name}'s ${enemyCmd} (${defRoll})!`,
-          tacNote || (aff.tag ? `Style: ${aff.tag}` : `Clean breakthrough into ${nextZoneName}!`)
-        ];
+        const nextZoneName = this.zone === 1 ? 'Midfield' : 'the Attack Zone';
+        this.resultHeadline = `BREAKTHROUGH TO ${this.zone === 1 ? 'MIDFIELD' : 'ATTACK'}!`;
+        this.resultColor = '#06d6a0';
+        this.resultBody = `${p.name}'s ${actionTitle} (${atkRoll}) beat ${e.name}'s ${enemyCmd.toLowerCase()} (${defRoll})! ${tacNote || `Ball advances to ${nextZoneName}!`}`;
       } else {
-        // ENEMY WINS TURNOVER!
         this.rhythmBonus = 0;
         this.possession = 'ENEMY';
         this.syncMatchupForZone();
-        this.bannerText = `TURNOVER! ${e.name} (${defRoll} vs ${atkRoll})`;
-        this.bannerColor = '#ef476f';
-        this.logLines = [
-          `${p.name}'s ${actionTitle} (${atkRoll}) stopped by ${e.name}'s ${enemyCmd} (${defRoll})!`,
-          tacNote || `${this.enemyTeam.name} steals possession!`
-        ];
+        this.resultHeadline = `BALL LOST TO ${e.name.toUpperCase()}!`;
+        this.resultColor = '#ef476f';
+        this.resultBody = `${e.name} (${defRoll}) stopped ${p.name}'s ${actionTitle} (${atkRoll}). ${tacNote || `${this.enemyTeam.name} takes the ball!`}`;
       }
       this.subState = 'ANIM_RESULT';
     },
@@ -367,12 +441,12 @@ window.SR = window.SR || {};
           this.flashColor = sk.color;
         } else {
           defType = 'TACKLE';
+          p.sta = Math.max(0, p.sta - 5);
         }
       } else {
         p.sta = Math.max(0, p.sta - 5);
       }
 
-      // Enemy AI chooses Offense: in Zone 0 (Player Defense / Enemy Attack), Enemy frequently SHOOTS!
       let enemyAtkCmd = 'DRIBBLE';
       if (this.zone === 0) {
         enemyAtkCmd = Math.random() < 0.68 ? 'SHOOT' : (Math.random() < 0.5 ? 'DRIBBLE' : 'PASS');
@@ -386,49 +460,38 @@ window.SR = window.SR || {};
       const staPenaltyP = p.sta < 15 ? 0.78 : 1.0;
       const staPenaltyE = e.sta < 15 ? 0.78 : 1.0;
 
-      // Case 1: Enemy attempts a SHOT on Player's Goal!
       if (enemyAtkCmd === 'SHOOT') {
         let shotPow = e.sho * staPenaltyE * (0.92 + Math.random() * 0.2);
         let blockMsg = '';
 
-        // If player picked BLOCK (or Aegis Wall), reduce shot power! Furthermore, high block can outright deflect it!
         if (defType === 'BLOCK') {
           const cut = usedSkill ? 0.45 : 0.65;
           shotPow *= cut;
-          blockMsg = `${p.name} ${usedSkill ? usedSkill.name : 'BLOCKS'} (-${Math.round((1 - cut) * 100)}% Shot Power)!`;
+          blockMsg = `${p.name} blocked -${Math.round((1 - cut) * 100)}% power! `;
         } else if (defType === 'TACKLE') {
-          // Small chance to slide-block before shot
           const tacCheck = p.tac * aff.mult * skillMult * staPenaltyP;
           if (tacCheck > e.dri * 1.25) {
             this.possession = 'PLAYER';
             this.syncMatchupForZone();
-            this.bannerText = `LAST-DITCH TACKLE BY ${p.name.toUpperCase()}!`;
-            this.bannerColor = '#06d6a0';
-            this.logLines = [
-              `${e.name} wound up to shoot, but ${p.name} stripped the ball clean!`,
-              `Possession recovered in DEFENSE!`
-            ];
+            this.resultHeadline = `GREAT SLIDE TACKLE BY ${p.name.toUpperCase()}!`;
+            this.resultColor = '#06d6a0';
+            this.resultBody = `${e.name} wound up to shoot, but ${p.name} stripped the ball clean in Defense!`;
             this.subState = 'ANIM_RESULT';
             return;
           }
         }
 
-        // Transition to Interactive Goalkeeper Showdown!
         this.incomingShotPower = Math.max(6, Math.round(shotPow));
         this.incomingShooter = e;
-        this.subState = 'GK_DEFEND';
-        this.cursor = 0;
+        this.subState = 'ANIM_RESULT'; // Show shot warning cleanly before GK picks!
+        this._pendingGKShowdown = true;
         const gk = this.getPlayerSquad()[0];
-        this.bannerText = `DANGER! ${e.name.toUpperCase()} SHOOTS (POW ${this.incomingShotPower})!`;
-        this.bannerColor = '#ffca3a';
-        this.logLines = [
-          blockMsg || `${e.name} blasts a shot toward goal (Power ${this.incomingShotPower})!`,
-          `KEEPER SHOWDOWN! Choose how GK ${gk.name} reacts!`
-        ];
+        this.resultHeadline = `SHOT ON GOAL BY ${e.name.toUpperCase()}!`;
+        this.resultColor = '#ffca3a';
+        this.resultBody = `${blockMsg}${e.name} blasts a shot toward goal (Power ${this.incomingShotPower})! Get ready to save with GK ${gk.name}!`;
         return;
       }
 
-      // Case 2: Enemy attempts DRIBBLE or PASS vs Player's TACKLE / INTERCEPT / BLOCK
       const defStat = defType === 'INTERCEPT' ? p.int : (defType === 'TACKLE' ? p.tac : (p.tac + p.int) * 0.55);
       const atkStat = enemyAtkCmd === 'PASS' ? e.pas : e.dri;
 
@@ -437,61 +500,52 @@ window.SR = window.SR || {};
       let tacNote = '';
       if (defType === 'TACKLE' && enemyAtkCmd === 'DRIBBLE') {
         tacMultP = 1.25;
-        tacNote = 'GREAT READ! Tackle stops Dribble (+25%)!';
+        tacNote = 'Great read: Tackle stopped Dribble!';
       } else if (defType === 'INTERCEPT' && enemyAtkCmd === 'PASS') {
         tacMultP = 1.25;
-        tacNote = 'GREAT READ! Intercept cuts Pass (+25%)!';
+        tacNote = 'Great read: Intercept cut the Pass!';
       } else if (defType === 'TACKLE' && enemyAtkCmd === 'PASS') {
         tacMultE = 1.20;
         tacNote = `${e.name} passed around your Tackle!`;
       } else if (defType === 'INTERCEPT' && enemyAtkCmd === 'DRIBBLE') {
         tacMultE = 1.20;
-        tacNote = `${e.name} dribbled through your Intercept lane!`;
+        tacNote = `${e.name} dribbled past your Intercept!`;
       }
 
       const defRoll = Math.round(defStat * aff.mult * staPenaltyP * skillMult * tacMultP * (0.9 + Math.random() * 0.2));
       const atkRoll = Math.round(atkStat * staPenaltyE * tacMultE * (0.9 + Math.random() * 0.2));
-      const defMoveName = usedSkill ? usedSkill.name : defType;
+      const defMoveName = usedSkill ? usedSkill.name : (defType === 'INTERCEPT' ? 'Intercept' : (defType === 'BLOCK' ? 'Block' : 'Tackle'));
 
       if (defRoll >= atkRoll) {
-        // PLAYER STEALS THE BALL!
         this.possession = 'PLAYER';
-        this.rhythmBonus = 0.10; // Counter-attack momentum!
+        this.rhythmBonus = 0.10;
         this.syncMatchupForZone();
-        this.bannerText = `BALL RECOVERED! (${defRoll} vs ${atkRoll})`;
-        this.bannerColor = '#06d6a0';
-        this.logLines = [
-          `${p.name}'s ${defMoveName} (${defRoll}) beats ${e.name}'s ${enemyAtkCmd} (${atkRoll})!`,
-          tacNote || `You won possession! Time to counter-attack!`
-        ];
+        this.resultHeadline = `BALL WON BY ${p.name.toUpperCase()}!`;
+        this.resultColor = '#06d6a0';
+        this.resultBody = `${p.name}'s ${defMoveName} (${defRoll}) beat ${e.name}'s ${enemyAtkCmd.toLowerCase()} (${atkRoll})! ${tacNote || 'Time to counter-attack!'}`;
       } else {
-        // ENEMY ADVANCES CLOSER TO PLAYER GOAL!
         this.zone = Math.max(0, this.zone - 1);
         this.syncMatchupForZone();
-        const zoneDanger = this.zone === 0 ? 'YOUR PENALTY BOX (DEFENSE)!' : 'MIDFIELD!';
-        this.bannerText = `ENEMY ADVANCES TO ${zoneDanger} (${atkRoll} vs ${defRoll})`;
-        this.bannerColor = '#ef476f';
-        this.logLines = [
-          `${e.name}'s ${enemyAtkCmd} (${atkRoll}) slips past ${p.name}'s ${defMoveName} (${defRoll})!`,
-          tacNote || `${this.enemyTeam.name} pushes into ${zoneDanger}`
-        ];
+        const zoneDanger = this.zone === 0 ? 'your Defense Zone' : 'Midfield';
+        this.resultHeadline = `FOE PUSHES INTO ${this.zone === 0 ? 'DEFENSE' : 'MIDFIELD'}!`;
+        this.resultColor = '#ef476f';
+        this.resultBody = `${e.name}'s ${enemyAtkCmd.toLowerCase()} (${atkRoll}) beat ${p.name}'s ${defMoveName} (${defRoll}). ${tacNote || `${this.enemyTeam.name} advances into ${zoneDanger}!`}`;
       }
       this.subState = 'ANIM_RESULT';
     },
 
-    // INTERACTIVE GOALKEEPER SAVE SHOWDOWN
     resolvePlayerGoalkeeperSave: function (gkCmd) {
       const gk = this.getPlayerSquad()[0];
       const shooter = this.incomingShooter || this.getEnemy();
       const shotPow = this.incomingShotPower;
 
       let saveMult = 1.0;
-      let moveName = 'Diving Catch';
+      let moveName = 'Catch Hold';
       let clearsToMid = false;
 
       if (gkCmd === 'GK_PUNCH') {
         saveMult = 1.16;
-        moveName = 'Fist Punch Clear';
+        moveName = 'Punch Clear';
         clearsToMid = true;
         gk.sta = Math.max(0, gk.sta - 5);
       } else if (gkCmd === 'GK_SKILL') {
@@ -505,7 +559,7 @@ window.SR = window.SR || {};
           clearsToMid = true;
         } else {
           saveMult = 1.08;
-          moveName = 'Desperation Catch';
+          moveName = 'Diving Catch';
         }
       } else if (gkCmd === 'GK_DIVE') {
         saveMult = 1.05;
@@ -520,29 +574,21 @@ window.SR = window.SR || {};
       const saveRoll = Math.round((gk.gk * 1.15 + gk.tac * 0.2) * aff.mult * staMod * saveMult * (0.92 + Math.random() * 0.2));
 
       if (saveRoll >= shotPow) {
-        // SAVED BY PLAYER GK!
         this.possession = 'PLAYER';
         this.zone = clearsToMid ? 1 : 0;
         this.activePlayerIdx = clearsToMid ? 2 : 1;
         this.syncMatchupForZone();
-        this.bannerText = `WHAT A SAVE BY ${gk.name.toUpperCase()}! (${saveRoll} vs ${shotPow})`;
-        this.bannerColor = '#06d6a0';
-        this.logLines = [
-          `GK ${gk.name} uses ${moveName} (Save ${saveRoll} vs Shot ${shotPow})!`,
-          clearsToMid ? `Ball launched straight to MIDFIELD for a counter!` : `${gk.name} holds onto the ball in Defense!`
-        ];
+        this.resultHeadline = `SAVED BY GK ${gk.name.toUpperCase()}!`;
+        this.resultColor = '#06d6a0';
+        this.resultBody = `GK ${gk.name} used ${moveName} (${saveRoll} vs Shot ${shotPow})! ${clearsToMid ? 'Cleared straight to Midfield!' : 'Held safely in Defense!'}`;
         this.subState = 'ANIM_RESULT';
       } else {
-        // ENEMY SCORES!
         this.enemyScore++;
         this.flashTimer = 20;
         this.flashColor = '#ef476f';
-        this.bannerText = `GOAL CONCEDED... (${shotPow} vs Save ${saveRoll})`;
-        this.bannerColor = '#ef476f';
-        this.logLines = [
-          `${shooter.name}'s shot (${shotPow}) beats GK ${gk.name}'s ${moveName} (${saveRoll})...`,
-          `${this.enemyTeam.name} scores! Score: YOU ${this.playerScore} - ${this.enemyScore} FOE`
-        ];
+        this.resultHeadline = `GOAL CONCEDED... (${this.playerScore} - ${this.enemyScore})`;
+        this.resultColor = '#ef476f';
+        this.resultBody = `${shooter.name}'s shot (${shotPow}) slipped past GK ${gk.name}'s ${moveName} (${saveRoll})!`;
         this.resetAfterGoal('PLAYER');
       }
     },
@@ -554,7 +600,6 @@ window.SR = window.SR || {};
       this.activeEnemyIdx = 2;
       this.rhythmBonus = 0;
 
-      // Check instant win by goal target
       if (this.playerScore >= this.goalsToWin || this.enemyScore >= this.goalsToWin) {
         this.subState = 'MATCH_OVER';
       } else {
@@ -563,6 +608,14 @@ window.SR = window.SR || {};
     },
 
     advanceAfterPause: function () {
+      // If an enemy shot was just announced, switch into Keeper Command choice!
+      if (this._pendingGKShowdown) {
+        this._pendingGKShowdown = false;
+        this.subState = 'GK_DEFEND';
+        this.cursor = 0;
+        return;
+      }
+
       if (this.playerScore >= this.goalsToWin || this.enemyScore >= this.goalsToWin) {
         this.subState = 'MATCH_OVER';
         return;
@@ -570,15 +623,11 @@ window.SR = window.SR || {};
 
       this.turn++;
       if (this.turn > this.maxTurns) {
-        // If tied at max turns, Sudden Death overtime!
         if (this.playerScore === this.enemyScore) {
-          this.bannerText = 'OVERTIME! NEXT GOAL WINS!';
-          this.bannerColor = '#ffd166';
-          this.logLines = [
-            `Full time tied ${this.playerScore}-${this.enemyScore}! Entering SUDDEN DEATH OVERTIME!`,
-            `First team to score wins the match!`
-          ];
-          this.subState = 'COMMAND';
+          this.resultHeadline = 'SUDDEN DEATH OVERTIME!';
+          this.resultColor = '#ffd166';
+          this.resultBody = `Score tied ${this.playerScore}-${this.enemyScore} at full time! Next goal wins the match!`;
+          this.subState = 'INTRO';
           this.cursor = 0;
           return;
         } else {
@@ -588,10 +637,6 @@ window.SR = window.SR || {};
       }
 
       this.syncMatchupForZone();
-      const zName = this.zone === 0 ? 'DEFENSE PHASE' : (this.zone === 1 ? 'MIDFIELD PHASE' : 'ATTACK PHASE');
-      const possTag = this.possession === 'PLAYER' ? 'YOUR BALL' : 'ENEMY BALL';
-      this.bannerText = `TURN ${this.turn}/${this.maxTurns} — ${zName} (${possTag})`;
-      this.bannerColor = this.possession === 'PLAYER' ? '#4cc9f0' : '#ffca3a';
       this.subState = 'COMMAND';
       this.cursor = 0;
     },
@@ -610,256 +655,371 @@ window.SR = window.SR || {};
       }
     },
 
-    // RENDER THE 320x288 MATCH SCREEN
+    // =========================================================================
+    // CLEAN POKÉMON GBA 2-PART MATCH UI RENDERER (320 x 288)
+    // =========================================================================
     render: function (ctx, tick) {
-      // Background Pitch Turf
-      ctx.fillStyle = '#1b4332';
-      ctx.fillRect(0, 0, 320, 288);
-
-      // Flash effect on Special Skill or Goal
-      if (this.flashTimer > 0) {
-        this.flashTimer--;
-        if (this.flashTimer % 2 === 0) {
-          ctx.fillStyle = this.flashColor;
-          ctx.globalAlpha = 0.28;
-          ctx.fillRect(0, 0, 320, 288);
-          ctx.globalAlpha = 1.0;
-        }
-      }
-
-      // 1. TOP SCOREBOARD BAR (y: 0..22)
-      ctx.fillStyle = '#0d1017';
+      // 1. TOP SCOREBOARD HEADER (y: 0..22)
+      ctx.fillStyle = '#0d111a';
       ctx.fillRect(0, 0, 320, 22);
       ctx.strokeStyle = '#334155';
       ctx.strokeRect(0.5, 0.5, 319, 21);
 
       ctx.font = 'bold 10px monospace';
       ctx.fillStyle = '#4cc9f0';
-      ctx.fillText(`YOU ${this.playerScore}`, 8, 14);
-      ctx.fillStyle = '#ffffff';
-      ctx.fillText(`-`, 46, 14);
-      ctx.fillStyle = '#ef476f';
-      ctx.fillText(`${this.enemyScore} FOE`, 56, 14);
-
-      ctx.fillStyle = '#ffd166';
-      const turnText = this.turn > this.maxTurns ? 'OVERTIME!' : `TURN ${this.turn}/${this.maxTurns}`;
-      ctx.fillText(turnText, 122, 14);
-
+      ctx.fillText(`YOU ${this.playerScore}`, 8, 15);
       ctx.fillStyle = '#94a3b8';
-      ctx.fillText(`1ST TO ${this.goalsToWin}G`, 252, 14);
+      ctx.fillText('-', 44, 15);
+      ctx.fillStyle = '#ef476f';
+      ctx.fillText(`${this.enemyScore} FOE`, 53, 15);
 
-      // 2. MINI PITCH 3-ZONE RADAR (y: 25..73)
-      const px = 14, py = 25, pw = 292, ph = 46;
-      const zw = Math.floor(pw / 3);
+      // Center Phase & Possession Indicator
+      const zShort = this.subState === 'GK_DEFEND'
+        ? 'GOALBOX'
+        : (this.zone === 0 ? 'DEFENSE' : (this.zone === 1 ? 'MIDFIELD' : 'ATTACK'));
+      const possShort = this.subState === 'GK_DEFEND'
+        ? 'SAVE!'
+        : (this.possession === 'PLAYER' ? 'YOUR BALL' : 'FOE BALL');
+      ctx.fillStyle = this.possession === 'PLAYER' && this.subState !== 'GK_DEFEND' ? '#06d6a0' : '#ffca3a';
+      ctx.font = 'bold 9px monospace';
+      ctx.fillText(`${zShort} • ${possShort}`, 100, 14);
 
-      // Draw the 3 zones: DEF (0), MID (1), ATK (2)
-      const zoneColors = ['#1e3a2f', '#234f3b', '#1e3a2f'];
-      const zoneLabels = ['DEFENSE', 'MIDFIELD', 'ATTACK'];
-      for (let z = 0; z < 3; z++) {
-        ctx.fillStyle = (this.zone === z) ? '#2d6a4f' : zoneColors[z];
-        ctx.fillRect(px + z * zw, py, zw, ph);
-        if (this.zone === z) {
-          ctx.strokeStyle = '#ffd166';
-          ctx.lineWidth = 2;
-          ctx.strokeRect(px + z * zw + 1, py + 1, zw - 2, ph - 2);
-          ctx.lineWidth = 1;
-        }
-        ctx.fillStyle = (this.zone === z) ? '#ffd166' : 'rgba(255,255,255,0.45)';
-        ctx.font = 'bold 8px monospace';
-        ctx.fillText(zoneLabels[z], px + z * zw + 26, py + 10);
+      // Right Turn & Goal Target
+      ctx.fillStyle = '#cbd5e1';
+      ctx.font = 'bold 9px monospace';
+      const rightInfo = this.turn > this.maxTurns
+        ? 'OVERTIME'
+        : `T${this.turn}/${this.maxTurns} • ${this.goalsToWin}G`;
+      ctx.fillText(rightInfo, 246, 14);
+
+      // 2. VISUAL 3-ZONE FOOTBALL PITCH (y: 22..196)
+      ctx.fillStyle = '#1e5631';
+      ctx.fillRect(0, 22, 320, 174);
+      // Mow stripes across the pitch
+      ctx.fillStyle = '#24633a';
+      for (let sx = 0; sx < 320; sx += 40) {
+        ctx.fillRect(sx, 22, 20, 174);
       }
 
-      // Pitch lines on radar
-      ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+      // Flash effect on Special Skill or Goal
+      if (this.flashTimer > 0) {
+        this.flashTimer--;
+        if (this.flashTimer % 2 === 0) {
+          ctx.fillStyle = this.flashColor;
+          ctx.globalAlpha = 0.30;
+          ctx.fillRect(0, 22, 320, 174);
+          ctx.globalAlpha = 1.0;
+        }
+      }
+
+      // Draw Pitch Lines & 3 Zone Columns (x: 16..304, y: 74..144)
+      const px = 16, py = 74, pw = 288, ph = 68;
+      const zw = 96; // 288 / 3
+
+      ctx.strokeStyle = 'rgba(255,255,255,0.45)';
+      ctx.lineWidth = 1;
       ctx.strokeRect(px, py, pw, ph);
+      // Zone dividers
       ctx.beginPath();
       ctx.moveTo(px + zw, py); ctx.lineTo(px + zw, py + ph);
       ctx.moveTo(px + zw * 2, py); ctx.lineTo(px + zw * 2, py + ph);
       ctx.stroke();
 
-      // Goals on left (Your Goal) and right (Enemy Goal)
-      ctx.fillStyle = '#4cc9f0';
-      ctx.fillRect(px - 4, py + 13, 4, 20);
-      ctx.fillStyle = '#ef476f';
-      ctx.fillRect(px + pw, py + 13, 4, 20);
+      // Center circle in Midfield
+      ctx.beginPath();
+      ctx.arc(px + 144, py + 34, 16, 0, Math.PI * 2);
+      ctx.stroke();
 
-      // Plot 5v5 dots on radar + ball
-      const pDots = [
-        { x: px + 10, y: py + 23 },             // GK
-        { x: px + 52, y: py + 23 },             // DEF
-        { x: px + zw + 35, y: py + 15 },        // MID1
-        { x: px + zw + 55, y: py + 33 },        // MID2
-        { x: px + zw * 2 + 45, y: py + 23 }     // FWD
+      // Highlight the Active Zone on the Pitch
+      const activeZ = this.subState === 'GK_DEFEND' ? 0 : this.zone;
+      ctx.strokeStyle = '#ffd166';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(px + activeZ * zw + 1, py + 1, zw - 2, ph - 2);
+      ctx.lineWidth = 1;
+
+      const zTitles = ['DEFENSE', 'MIDFIELD', 'ATTACK'];
+      for (let z = 0; z < 3; z++) {
+        ctx.fillStyle = (z === activeZ) ? '#ffd166' : 'rgba(255,255,255,0.5)';
+        ctx.font = 'bold 8px monospace';
+        ctx.fillText(zTitles[z], px + z * zw + 26, py + 10);
+      }
+
+      // Left Goal (Your Goal) & Right Goal (Foe Goal)
+      ctx.fillStyle = '#4cc9f0';
+      ctx.fillRect(px - 6, py + 20, 6, 28);
+      ctx.strokeStyle = '#ffffff';
+      ctx.strokeRect(px - 6, py + 20, 6, 28);
+
+      ctx.fillStyle = '#ef476f';
+      ctx.fillRect(px + pw, py + 20, 6, 28);
+      ctx.strokeStyle = '#ffffff';
+      ctx.strokeRect(px + pw, py + 20, 6, 28);
+
+      // Draw 5v5 Squad Sprites on the Pitch!
+      const playerUnit = this.subState === 'GK_DEFEND' ? this.getPlayerSquad()[0] : this.getPlayer();
+      const enemyUnit = this.subState === 'GK_DEFEND' ? (this.incomingShooter || this.getEnemy()) : this.getEnemy();
+      const pSquad = this.getPlayerSquad();
+      const eSquad = this.enemyTeam.players;
+
+      // Base formation coords on the pitch
+      const pCoords = [
+        { x: px + 4,   y: py + 26 }, // 0: GK
+        { x: px + 36,  y: py + 26 }, // 1: DEF
+        { x: px + 114, y: py + 14 }, // 2: MID1
+        { x: px + 114, y: py + 40 }, // 3: MID2
+        { x: px + 206, y: py + 26 }  // 4: FWD
       ];
-      const eDots = [
-        { x: px + pw - 10, y: py + 23 },        // Enemy GK
-        { x: px + zw * 2 + 65, y: py + 23 },    // Enemy DEF
-        { x: px + zw + 62, y: py + 15 },        // Enemy MID1
-        { x: px + zw + 42, y: py + 33 },        // Enemy MID2
-        { x: px + 68, y: py + 23 }              // Enemy FWD
+      const eCoords = [
+        { x: px + pw - 20, y: py + 26 }, // 0: Enemy GK
+        { x: px + 246,     y: py + 26 }, // 1: Enemy DEF
+        { x: px + 158,     y: py + 14 }, // 2: Enemy MID1
+        { x: px + 158,     y: py + 40 }, // 3: Enemy MID2
+        { x: px + 64,      y: py + 26 }  // 4: Enemy FWD
       ];
+
+      // Snap active duelists face-to-face inside the active zone!
+      const duelCenterX = px + activeZ * zw + 48;
+      const activePIdx = this.subState === 'GK_DEFEND' ? 0 : this.activePlayerIdx;
+      const activeEIdx = this.subState === 'GK_DEFEND' ? 4 : this.activeEnemyIdx;
+      pCoords[activePIdx] = { x: duelCenterX - 22, y: py + 26 };
+      eCoords[activeEIdx] = { x: duelCenterX + 6,  y: py + 26 };
+
+      // Draw Spotlight Rings under the two active duelists
+      ctx.strokeStyle = '#ffd166';
+      ctx.strokeRect(pCoords[activePIdx].x + 1, pCoords[activePIdx].y + 12, 14, 5);
+      ctx.strokeRect(eCoords[activeEIdx].x + 1, eCoords[activeEIdx].y + 12, 14, 5);
 
       for (let i = 0; i < 5; i++) {
-        ctx.fillStyle = '#3a86ff';
-        ctx.fillRect(pDots[i].x - 3, pDots[i].y - 3, 6, 6);
-        ctx.fillStyle = this.enemyTeam.kitPrimary || '#ef476f';
-        ctx.fillRect(eDots[i].x - 3, eDots[i].y - 3, 6, 6);
+        const isActP = (i === activePIdx);
+        SR.drawCharacter(ctx, pCoords[i].x, pCoords[i].y, {
+          skin: pSquad[i].skin,
+          hair: pSquad[i].hair,
+          kitPrimary: '#3a86ff',
+          kitSecondary: '#ffffff',
+          moving: isActP,
+          hasBall: isActP && this.possession === 'PLAYER' && this.subState !== 'GK_DEFEND'
+        }, tick);
+
+        const isActE = (i === activeEIdx);
+        SR.drawCharacter(ctx, eCoords[i].x, eCoords[i].y, {
+          skin: eSquad[i].skin,
+          hair: eSquad[i].hair,
+          kitPrimary: this.enemyTeam.kitPrimary || '#ef476f',
+          kitSecondary: this.enemyTeam.kitSecondary || '#111111',
+          moving: isActE,
+          hasBall: isActE && (this.possession === 'ENEMY' || this.subState === 'GK_DEFEND')
+        }, tick);
       }
 
-      // Draw Ball on Radar
-      const ballX = this.subState === 'GK_DEFEND'
-        ? px + 14
-        : (px + this.zone * zw + Math.floor(zw / 2));
-      SR.drawBall(ctx, ballX - 3, py + 20);
+      // 3. POKÉMON GBA FLOATING HUD PLATES (Clean Name + Role + Style + Stamina Bar!)
+      // Top-Left: Opponent Active Player Plate
+      this.drawHudPlate(ctx, 8, 26, enemyUnit, false);
 
-      // 3. PHASE BANNER (y: 74..90)
-      ctx.fillStyle = '#0d1017';
-      ctx.fillRect(0, 74, 320, 16);
-      ctx.fillStyle = this.bannerColor;
+      // Top-Right: Clear, High-Contrast Style Matchup Pill!
+      this.drawStyleMatchupBadge(ctx, 160, 26, playerUnit, enemyUnit);
+
+      // Bottom-Right: Your Active Player Plate
+      this.drawHudPlate(ctx, 164, 148, playerUnit, true);
+
+      // 4. BOTTOM CLASSIC GBA BOX (y: 196..288) — Switches cleanly between Text Box & Command Menu!
+      ctx.fillStyle = '#0b0e16';
+      ctx.fillRect(0, 196, 320, 92);
+      ctx.strokeStyle = '#475569';
+      ctx.strokeRect(0.5, 196.5, 319, 91);
+
+      if (this.isTextBoxState()) {
+        this.renderTextBoxFrame(ctx);
+      } else {
+        this.renderCommandMenuFrame(ctx);
+      }
+    },
+
+    drawHudPlate: function (ctx, x, y, unit, isPlayer) {
+      const w = 148, h = 42;
+      ctx.fillStyle = 'rgba(13, 17, 26, 0.92)';
+      ctx.fillRect(x, y, w, h);
+      ctx.strokeStyle = isPlayer ? '#3a86ff' : '#ef476f';
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+      ctx.lineWidth = 1;
+
+      // Row 1: Player Name & Role
+      ctx.fillStyle = '#ffffff';
       ctx.font = 'bold 9px monospace';
-      ctx.fillText(this.bannerText.slice(0, 44), 8, 85);
+      ctx.fillText(`${unit.name.slice(0, 12)}`, x + 6, y + 13);
 
-      // 4. 1v1 CLASH ARENA (y: 92..172)
-      ctx.fillStyle = '#255f42';
-      ctx.fillRect(0, 92, 320, 80);
-      // Decorative turf stripes
-      ctx.fillStyle = '#1f5138';
-      for (let sx = 0; sx < 320; sx += 32) {
-        ctx.fillRect(sx, 92, 16, 80);
+      ctx.fillStyle = '#94a3b8';
+      ctx.font = 'bold 8px monospace';
+      ctx.fillText(`[${unit.role}]`, x + 112, y + 13);
+
+      // Row 2: Full Style Name Badge + Stamina Bar
+      const aff = SR.AFFINITIES[unit.affinity] || SR.AFFINITIES.SPEED;
+      ctx.fillStyle = aff.color;
+      ctx.fillRect(x + 6, y + 19, 40, 12);
+      ctx.fillStyle = '#090c12';
+      ctx.font = 'bold 8px monospace';
+      ctx.fillText(aff.name.toUpperCase(), x + 9, y + 28);
+
+      // Stamina Bar
+      ctx.fillStyle = '#1e293b';
+      ctx.fillRect(x + 52, y + 20, 88, 10);
+      const pct = Math.max(0, Math.min(1, unit.sta / unit.maxSta));
+      ctx.fillStyle = pct > 0.35 ? '#06d6a0' : '#ef476f';
+      ctx.fillRect(x + 52, y + 20, Math.round(88 * pct), 10);
+
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 7px monospace';
+      ctx.fillText(`STA ${unit.sta}/${unit.maxSta}`, x + 62, y + 28);
+
+      // Pass Rhythm indicator on Player Plate
+      if (isPlayer && this.rhythmBonus > 0) {
+        ctx.fillStyle = '#ffd166';
+        ctx.font = 'bold 7px monospace';
+        ctx.fillText(`★ PASS BOOST +${Math.round(this.rhythmBonus * 100)}%`, x + 6, y + 39);
       }
+    },
 
-      const leftUnit = this.subState === 'GK_DEFEND' ? this.getPlayerSquad()[0] : this.getPlayer();
-      const rightUnit = this.subState === 'GK_DEFEND' ? (this.incomingShooter || this.getEnemy()) : this.getEnemy();
+    drawStyleMatchupBadge: function (ctx, x, y, pUnit, eUnit) {
+      const pAff = SR.AFFINITIES[pUnit.affinity] || SR.AFFINITIES.SPEED;
+      const eAff = SR.AFFINITIES[eUnit.affinity] || SR.AFFINITIES.SPEED;
+      const adv = SR.getAffinityAdvantage(pUnit.affinity, eUnit.affinity);
 
-      // Left Card (Player Unit)
-      this.drawUnitCard(ctx, 8, 96, leftUnit, true, this.possession === 'PLAYER' && this.subState !== 'GK_DEFEND', tick);
-      // Right Card (Enemy Unit)
-      this.drawUnitCard(ctx, 172, 96, rightUnit, false, this.possession === 'ENEMY' || this.subState === 'GK_DEFEND', tick);
+      ctx.fillStyle = 'rgba(13, 17, 26, 0.92)';
+      ctx.fillRect(x, y, 152, 30);
 
-      // VS & Affinity Indicator in Center
-      ctx.fillStyle = '#ffd166';
-      ctx.font = 'bold 12px monospace';
-      ctx.fillText('VS', 152, 132);
-
-      const affAdv = SR.getAffinityAdvantage(leftUnit.affinity, rightUnit.affinity);
-      if (affAdv.mult > 1) {
+      if (adv.mult > 1) {
+        ctx.strokeStyle = '#06d6a0';
+        ctx.strokeRect(x + 0.5, y + 0.5, 151, 29);
         ctx.fillStyle = '#06d6a0';
         ctx.font = 'bold 8px monospace';
-        ctx.fillText('ADV +22%', 139, 146);
-      } else if (affAdv.mult < 1) {
-        ctx.fillStyle = '#ef476f';
-        ctx.font = 'bold 8px monospace';
-        ctx.fillText('WEAK -15%', 138, 146);
-      }
-
-      // 5. MATCH COMMENTARY LOG (y: 173..208)
-      ctx.fillStyle = '#111622';
-      ctx.fillRect(0, 173, 320, 35);
-      ctx.strokeStyle = '#334155';
-      ctx.strokeRect(0.5, 173.5, 319, 34);
-      ctx.fillStyle = '#e2e8f0';
-      ctx.font = '9px monospace';
-      if (this.logLines[0]) ctx.fillText(this.logLines[0].slice(0, 50), 6, 186);
-      ctx.fillStyle = '#ffd166';
-      if (this.logLines[1]) ctx.fillText(this.logLines[1].slice(0, 50), 6, 200);
-
-      // 6. BOTTOM COMMAND MENU / CONTINUE PROMPT (y: 209..288)
-      ctx.fillStyle = '#0b0e14';
-      ctx.fillRect(0, 209, 320, 79);
-
-      if (this.subState === 'ANIM_RESULT' || this.subState === 'MATCH_OVER') {
-        ctx.strokeStyle = '#ffd166';
-        ctx.strokeRect(8, 217, 304, 58);
-        ctx.fillStyle = '#ffd166';
-        ctx.font = 'bold 12px monospace';
-        const msg = this.subState === 'MATCH_OVER'
-          ? (this.playerScore > this.enemyScore ? 'VICTORY!! FULL TIME!' : 'DEFEAT... FULL TIME')
-          : 'PHASE COMPLETE';
-        ctx.fillText(msg, 20, 240);
+        ctx.fillText(`STYLE ADVANTAGE (+22%)`, x + 8, y + 12);
         ctx.fillStyle = '#ffffff';
-        ctx.font = '10px monospace';
-        ctx.fillText('Press [A / Z / Enter] or Tap to Continue ▶', 20, 260);
-        return;
+        ctx.fillText(`Your ${pAff.name} beats ${eAff.name}`, x + 8, y + 24);
+      } else if (adv.mult < 1) {
+        ctx.strokeStyle = '#ffca3a';
+        ctx.strokeRect(x + 0.5, y + 0.5, 151, 29);
+        ctx.fillStyle = '#ffca3a';
+        ctx.font = 'bold 8px monospace';
+        ctx.fillText(`STYLE DISADVANTAGE (-15%)`, x + 8, y + 12);
+        ctx.fillStyle = '#ffffff';
+        ctx.fillText(`Foe ${eAff.name} beats ${pAff.name}`, x + 8, y + 24);
+      } else {
+        ctx.strokeStyle = '#475569';
+        ctx.strokeRect(x + 0.5, y + 0.5, 151, 29);
+        ctx.fillStyle = '#94a3b8';
+        ctx.font = 'bold 8px monospace';
+        ctx.fillText(`STYLE MATCHUP: EVEN`, x + 8, y + 13);
+        ctx.fillStyle = '#cbd5e1';
+        ctx.fillText(`${pAff.name} vs ${eAff.name}`, x + 8, y + 24);
       }
+    },
 
+    renderTextBoxFrame: function (ctx) {
+      ctx.fillStyle = '#111624';
+      ctx.fillRect(6, 201, 308, 81);
+      ctx.strokeStyle = '#ffd166';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(7, 202, 306, 79);
+      ctx.lineWidth = 1;
+
+      const title = this.subState === 'MATCH_OVER'
+        ? (this.playerScore > this.enemyScore
+          ? `VICTORY!! (${this.playerScore} - ${this.enemyScore})`
+          : `FULL TIME — DEFEAT (${this.playerScore} - ${this.enemyScore})`)
+        : this.resultHeadline;
+
+      ctx.fillStyle = this.subState === 'MATCH_OVER'
+        ? (this.playerScore > this.enemyScore ? '#06d6a0' : '#ef476f')
+        : this.resultColor;
+      ctx.font = 'bold 10px monospace';
+      ctx.fillText(title, 14, 218);
+
+      // Multi-line word-wrapped body text — NEVER cut off!
+      ctx.fillStyle = '#f1f5f9';
+      ctx.font = '9px monospace';
+      this.drawWrappedText(ctx, this.resultBody, 14, 234, 292, 13, 3);
+
+      ctx.fillStyle = '#4cc9f0';
+      ctx.font = 'bold 8px monospace';
+      ctx.fillText('Press [A / Enter] or Tap ▶', 178, 275);
+    },
+
+    renderCommandMenuFrame: function (ctx) {
       const cmds = this.getCommands();
+
+      // Left 2x2 Command Buttons (x: 6..194, y: 201..281)
       for (let i = 0; i < 4; i++) {
         const col = i % 2;
         const row = Math.floor(i / 2);
-        const bx = 6 + col * 156;
-        const by = 212 + row * 28;
-        const bw = 152;
-        const bh = 25;
+        const bx = 6 + col * 95;
+        const by = 201 + row * 41;
+        const bw = 92;
+        const bh = 38;
         const sel = (this.cursor === i);
 
-        ctx.fillStyle = sel ? '#1e293b' : '#141a26';
+        ctx.fillStyle = sel ? '#1e293b' : '#121826';
         ctx.fillRect(bx, by, bw, bh);
         ctx.strokeStyle = sel ? '#ffd166' : '#334155';
         ctx.lineWidth = sel ? 2 : 1;
-        ctx.strokeRect(bx, by, bw, bh);
+        ctx.strokeRect(bx + 0.5, by + 0.5, bw - 1, bh - 1);
         ctx.lineWidth = 1;
 
         ctx.fillStyle = sel ? '#ffd166' : '#f1f5f9';
         ctx.font = 'bold 9px monospace';
-        ctx.fillText(cmds[i].label.slice(0, 22), bx + 6, by + 16);
+        const prefix = sel ? '▶ ' : '  ';
+        this.drawWrappedText(ctx, prefix + cmds[i].label, bx + 5, by + 16, bw - 8, 12, 2);
       }
 
-      // Description of highlighted command
-      const activeCmd = cmds[this.cursor] || cmds[0];
-      ctx.fillStyle = '#4cc9f0';
-      ctx.font = '9px monospace';
-      ctx.fillText(activeCmd.desc.slice(0, 50), 8, 281);
+      // Right Pokémon GBA Move Info Side-Box (x: 199..314, y: 201..281)
+      const active = cmds[this.cursor] || cmds[0];
+      ctx.fillStyle = '#121826';
+      ctx.fillRect(199, 201, 115, 80);
+      ctx.strokeStyle = '#4cc9f0';
+      ctx.strokeRect(199.5, 201.5, 114, 79);
+
+      // Move Type Header
+      ctx.fillStyle = '#ffd166';
+      ctx.font = 'bold 8px monospace';
+      ctx.fillText(`TYPE: ${active.moveType}`, 205, 215);
+
+      // Explicit Stamina Cost Line!
+      const canAfford = active.unitSta >= active.cost;
+      ctx.fillStyle = canAfford ? '#06d6a0' : '#ef476f';
+      ctx.font = 'bold 8px monospace';
+      const costText = active.cost > 0
+        ? (canAfford ? `COST: ${active.cost} STA` : `NEED ${active.cost} STA!`)
+        : 'COST: FREE';
+      ctx.fillText(costText, 205, 229);
+
+      // Divider line
+      ctx.fillStyle = '#334155';
+      ctx.fillRect(205, 234, 103, 1);
+
+      // Wrapped Tactical Tip
+      ctx.fillStyle = '#e2e8f0';
+      ctx.font = '8px monospace';
+      this.drawWrappedText(ctx, active.tip, 205, 246, 104, 11, 3);
     },
 
-    drawUnitCard: function (ctx, x, y, unit, isPlayer, hasBall, tick) {
-      ctx.fillStyle = 'rgba(13, 16, 23, 0.85)';
-      ctx.fillRect(x, y, 140, 72);
-      ctx.strokeStyle = isPlayer ? '#3a86ff' : '#ef476f';
-      ctx.strokeRect(x + 0.5, y + 0.5, 139, 71);
-
-      // Character Sprite
-      SR.drawCharacter(ctx, x + 6, y + 10, {
-        skin: unit.skin,
-        hair: unit.hair,
-        kitPrimary: isPlayer ? '#3a86ff' : (this.enemyTeam.kitPrimary || '#ef476f'),
-        kitSecondary: isPlayer ? '#ffffff' : (this.enemyTeam.kitSecondary || '#111111'),
-        moving: true,
-        hasBall: hasBall
-      }, tick);
-
-      // Name & Role
-      ctx.fillStyle = '#ffffff';
-      ctx.font = 'bold 9px monospace';
-      ctx.fillText(`${unit.name.slice(0, 11)} [${unit.role}]`, x + 26, y + 14);
-
-      // Affinity Badge
-      const aff = SR.AFFINITIES[unit.affinity] || SR.AFFINITIES.SPEED;
-      ctx.fillStyle = aff.color;
-      ctx.fillRect(x + 26, y + 18, 28, 10);
-      ctx.fillStyle = '#000000';
-      ctx.font = 'bold 8px monospace';
-      ctx.fillText(aff.icon, x + 31, y + 26);
-
-      // Stamina Bar
-      ctx.fillStyle = '#334155';
-      ctx.fillRect(x + 58, y + 19, 74, 8);
-      const staPct = Math.max(0, Math.min(1, unit.sta / unit.maxSta));
-      ctx.fillStyle = staPct > 0.35 ? '#06d6a0' : '#ef476f';
-      ctx.fillRect(x + 58, y + 19, Math.round(74 * staPct), 8);
-      ctx.fillStyle = '#ffffff';
-      ctx.font = '7px monospace';
-      ctx.fillText(`STA ${unit.sta}/${unit.maxSta}`, x + 64, y + 26);
-
-      // Key Stats Row
-      ctx.fillStyle = '#cbd5e1';
-      ctx.font = '8px monospace';
-      ctx.fillText(`DRI:${unit.dri} PAS:${unit.pas} SHO:${unit.sho}`, x + 6, y + 44);
-      ctx.fillText(`TAC:${unit.tac} INT:${unit.int} GK:${unit.gk}`, x + 6, y + 56);
-
-      // Rhythm Bonus Tag
-      if (isPlayer && this.rhythmBonus > 0) {
-        ctx.fillStyle = '#ffd166';
-        ctx.fillText(`★ PASS RHYTHM +${Math.round(this.rhythmBonus * 100)}%`, x + 6, y + 67);
+    drawWrappedText: function (ctx, text, x, y, maxWidth, lineHeight, maxLines) {
+      const words = String(text || '').split(' ');
+      let line = '';
+      let cy = y;
+      let count = 0;
+      for (let n = 0; n < words.length; n++) {
+        const testLine = line + words[n] + ' ';
+        if (ctx.measureText(testLine).width > maxWidth && n > 0) {
+          ctx.fillText(line.trim(), x, cy);
+          count++;
+          if (maxLines && count >= maxLines) return;
+          line = words[n] + ' ';
+          cy += lineHeight;
+        } else {
+          line = testLine;
+        }
+      }
+      if (line.trim()) {
+        ctx.fillText(line.trim(), x, cy);
       }
     }
   };
