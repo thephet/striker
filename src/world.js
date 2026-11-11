@@ -1,66 +1,101 @@
 window.SR = window.SR || {};
 
 (function (SR) {
-  const W = 20;
-  const H = 18;
   const T = SR.TILE;
 
-  function makeGrid(fillTile) {
+  function makeGrid(w, h, fillTile) {
     const g = [];
-    for (let y = 0; y < H; y++) {
+    for (let y = 0; y < h; y++) {
       const row = [];
-      for (let x = 0; x < W; x++) row.push(fillTile);
+      for (let x = 0; x < w; x++) row.push(fillTile);
       g.push(row);
     }
     return g;
   }
 
-  function makeBoolGrid(val) {
+  function makeBoolGrid(w, h, val) {
     const g = [];
-    for (let y = 0; y < H; y++) {
+    for (let y = 0; y < h; y++) {
       const row = [];
-      for (let x = 0; x < W; x++) row.push(!!val);
+      for (let x = 0; x < w; x++) row.push(!!val);
       g.push(row);
     }
     return g;
   }
 
   function fillRect(g, x0, y0, w, h, tile) {
+    const gh = g.length;
+    const gw = gh > 0 ? g[0].length : 0;
     for (let y = y0; y < y0 + h; y++) {
       for (let x = x0; x < x0 + w; x++) {
-        if (y >= 0 && y < H && x >= 0 && x < W) g[y][x] = tile;
+        if (y >= 0 && y < gh && x >= 0 && x < gw) g[y][x] = tile;
       }
     }
+  }
+
+  function shuffleArray(arr) {
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      const tmp = arr[i];
+      arr[i] = arr[j];
+      arr[j] = tmp;
+    }
+    return arr;
   }
 
   // =========================================================================
   // PROLOGUE CHAPTER MAPS (Bedroom -> Hometown & Friend's House -> School 1F/2F/Gym)
   // =========================================================================
 
-  // Prologue Map 0: Hero's Bedroom
+  // Prologue Map 0: Hero's Bedroom (Rich Multi-Tile GBA Interior, Zero Text Labels)
   function createBedroomMap() {
-    const g = makeGrid(T.WALL);
-    fillRect(g, 3, 3, 14, 12, T.WOOD_FLOOR);
+    const W = 20, H = 18;
+    const g = makeGrid(W, H, T.VOID);
 
-    // Cozy rug in the center
-    fillRect(g, 8, 7, 4, 4, T.RUG);
+    // Warm indoor floor (x: 3..16, y: 4..14) + top wallpaper wall (y: 2..3)
+    fillRect(g, 2, 2, 16, 14, T.INT_WALL);
+    fillRect(g, 3, 4, 14, 11, T.WOOD_FLOOR);
 
-    // Bed in top-left corner
-    g[4][4] = T.BED;
+    // Sunlit Windows on back wall
+    g[2][6] = T.INT_WINDOW;
+    g[2][14] = T.INT_WINDOW;
 
-    // Bookshelves along top wall
-    g[3][6] = T.BOOKSHELF;
-    g[3][7] = T.BOOKSHELF;
+    // Large woven bedroom area rug in center
+    fillRect(g, 7, 8, 5, 4, T.RUG);
 
-    // CRT TV + Retro Console in top-center/right
-    g[3][10] = T.TV_CONSOLE;
+    // Exit doormat at bottom center (stepping onto y=14, x=9..10 or pressing Down exits outside)
+    g[14][9] = T.DOORMAT_HERO;
+    g[14][10] = T.DOORMAT_HERO;
 
-    // Sofa on the right side
-    g[6][14] = T.SOFA;
-    g[7][14] = T.SOFA;
+    // Multi-tile furniture solid collision footprints:
+    // 1. Big 2x3 Bed at (3, 4) -> leave (4, 5) walkable so hero sleeps in bed & steps out cleanly
+    g[4][3] = T.FURNITURE_SOLID;
+    g[5][3] = T.FURNITURE_SOLID;
+    g[6][3] = T.FURNITURE_SOLID;
+    g[4][4] = T.FURNITURE_SOLID;
+    g[6][4] = T.FURNITURE_SOLID;
 
-    // Bedroom Door at bottom center leading outside to Hometown
-    g[15][9] = T.HOUSE_DOOR_HERO;
+    // 2. Wide 2x2 Bookshelf against top wall at (7, 3..4)
+    fillRect(g, 7, 3, 2, 2, T.FURNITURE_SOLID);
+
+    // 3. Wide 2x2 CRT TV + Retro Console on floor at (10, 3..4)
+    fillRect(g, 10, 3, 2, 2, T.FURNITURE_SOLID);
+
+    // 4. Lush Potted Plant in top-right corner at (15, 3..4)
+    fillRect(g, 15, 3, 1, 2, T.FURNITURE_SOLID);
+
+    // 5. Big 3x2 Plush Sofa on right side at (13..15, 7..8) + 2x1 Coffee Table at (13..14, 10)
+    fillRect(g, 13, 7, 3, 2, T.FURNITURE_SOLID);
+    fillRect(g, 13, 10, 2, 1, T.FURNITURE_SOLID);
+
+    const decor = [
+      { kind: 'BIG_BED',        x: 3,  y: 4,  w: 2, h: 3 },
+      { kind: 'WIDE_BOOKSHELF', x: 7,  y: 3,  w: 2, h: 2 },
+      { kind: 'TV_AND_CONSOLE', x: 10, y: 3,  w: 2, h: 2 },
+      { kind: 'POTTED_PLANT',   x: 15, y: 3,  w: 1, h: 2 },
+      { kind: 'BIG_SOFA',       x: 13, y: 7,  w: 3, h: 2 },
+      { kind: 'COFFEE_TABLE',   x: 13, y: 10, w: 2, h: 1 }
+    ];
 
     const npcs = [
       {
@@ -69,66 +104,88 @@ window.SR = window.SR || {};
         x: 8, y: 12,
         skin: '#f4c29f', hair: '#e2e8f0', kitPrimary: '#6c584c', kitSecondary: '#3d352e',
         role: 'GRANDAD',
-        badge: '♥',
         dialogue: [
           'Go on, Leo! Your 5 teammates are waiting outside, and those Varsity Jocks are trying to take over the High School gym!',
-          'Remember: you can always rest at your bed or visit your friend\'s Mum next door before heading North to the School!'
+          'You can rest in your bed anytime or visit your friend\'s Mum next door before heading North to the School!'
         ]
       }
     ];
 
     const props = [
-      { x: 4, y: 4, name: 'HERO\'S BED', text: 'Your cozy bed. Your squad catches a quick breather—Stamina 100% restored!', heal: true },
-      { x: 6, y: 3, name: 'BOOKSHELF', text: '"Tactical Football Vol. 1: PASS beats TACKLE, TACKLE beats DRIBBLE, and DRIBBLE beats INTERCEPT!"' },
-      { x: 7, y: 3, name: 'BOOKSHELF', text: 'Comics and old football magazines stacked neatly on the shelf.' },
-      { x: 10, y: 3, name: 'TV & RETRO CONSOLE', text: 'A classic 16-bit console is hooked up to the CRT TV! "SUPER STRIKER 96" is paused on the title screen.' },
-      { x: 14, y: 6, name: 'COZY SOFA', text: 'A comfy green sofa where you and your friends watch Championship matches.' },
-      { x: 14, y: 7, name: 'COZY SOFA', text: 'A comfy green sofa where you and your friends watch Championship matches.' }
+      { x: 3, y: 4, w: 2, h: 3, name: 'Bed', text: 'Your big comfy bed! Your squad takes a quick breather—Stamina 100% restored!', heal: true },
+      { x: 7, y: 3, w: 2, h: 2, name: 'Bookshelf', text: '"Tactical Football Vol. 1: PASS beats TACKLE, TACKLE beats DRIBBLE, and DRIBBLE beats INTERCEPT!"' },
+      { x: 10, y: 3, w: 2, h: 2, name: 'TV & Old Console', text: 'A classic 16-bit console with two controllers is hooked up to the CRT TV! "SUPER STRIKER 96" is glowing on screen.' },
+      { x: 13, y: 7, w: 3, h: 2, name: 'Sofa', text: 'A big plush green sofa where you and your teammates watch Championship matches.' },
+      { x: 13, y: 10, w: 2, h: 1, name: 'Coffee Table', text: 'Football magazines and a warm mug sit on the coffee table.' }
     ];
 
     return {
       id: 'PROLOGUE_BEDROOM',
-      name: 'LEO\'S BEDROOM',
-      subtitle: 'Home Sweet Home — Inspect TV, Books, Sofa or Exit South',
+      width: W,
+      height: H,
+      name: 'LEO\'S ROOM',
+      subtitle: 'Home Sweet Home',
       grid: g,
+      decor: decor,
       npcs: npcs,
       chests: [],
       props: props,
       fogOfWar: false,
-      spawnBed: { x: 4, y: 4 },
-      spawnDoor: { x: 9, y: 14 },
-      labels: [
-        { x: 4.5, y: 3.4, text: 'BED', color: '#4cc9f0' },
-        { x: 10.5, y: 2.5, text: 'TV+CONSOLE', color: '#ffd166' },
-        { x: 9.5, y: 16.5, text: '▼ EXIT OUTSIDE', color: '#06d6a0' }
-      ]
+      spawnBed: { x: 4, y: 5 },
+      spawnDoor: { x: 9, y: 13 },
+      labels: []
     };
   }
 
-  // Prologue Map 1: Hometown Outside (Hero's House + Friend's House + Path to School)
+  // Prologue Map 1: Hometown Neighborhood Exterior (Trees, Flowers, Fences, Cottages, Zero Text Labels)
   function createHometownMap() {
-    const g = makeGrid(T.GRASS);
-    fillRect(g, 0, 0, W, 1, T.WALL);
-    fillRect(g, 0, H - 1, W, 1, T.WALL);
-    fillRect(g, 0, 0, 1, H, T.WALL);
-    fillRect(g, W - 1, 0, 1, H, T.WALL);
+    const W = 20, H = 18;
+    const g = makeGrid(W, H, T.GRASS);
 
-    // Neighborhood roads
+    // Leafy tree border around town perimeter
+    fillRect(g, 0, 0, W, 1, T.TREE);
+    fillRect(g, 0, H - 1, W, 1, T.TREE);
+    fillRect(g, 0, 0, 1, H, T.TREE);
+    fillRect(g, W - 1, 0, 1, H, T.TREE);
+
+    // Extra corner trees & wildflower patches
+    g[1][1] = T.TREE; g[1][18] = T.TREE;
+    g[16][1] = T.TREE; g[16][18] = T.TREE;
+    fillRect(g, 2, 13, 4, 2, T.FLOWERS);
+    fillRect(g, 14, 13, 4, 2, T.FLOWERS);
+    g[11][3] = T.FLOWERS; g[11][16] = T.FLOWERS;
+
+    // Sandy/Cobblestone neighborhood roads
     fillRect(g, 9, 1, 2, H - 2, T.ROAD);
-    fillRect(g, 3, 8, 14, 2, T.ROAD);
+    fillRect(g, 3, 9, 14, 2, T.ROAD);
+    // Doorstep paths
+    g[8][5] = T.ROAD;
+    g[8][14] = T.ROAD;
 
-    // North Gate to the High School
+    // White picket fences framing front yards
+    fillRect(g, 2, 8, 3, 1, T.FENCE);
+    fillRect(g, 6, 8, 2, 1, T.FENCE);
+    fillRect(g, 12, 8, 2, 1, T.FENCE);
+    fillRect(g, 15, 8, 3, 1, T.FENCE);
+
+    // North Avenue Exit to High School
+    g[0][9] = T.PORTAL_UP;
+    g[0][10] = T.PORTAL_UP;
     g[1][9] = T.PORTAL_UP;
     g[1][10] = T.PORTAL_UP;
 
-    // Left House: Hero's House (Red Roof)
-    fillRect(g, 3, 3, 5, 2, T.ROOF_RED);
-    fillRect(g, 3, 5, 5, 3, T.WALL);
+    // Left Cottage: Hero's House (Pitched Red Shingle Roof + Windows + Front Door)
+    fillRect(g, 2, 3, 6, 3, T.ROOF_RED);
+    fillRect(g, 2, 6, 6, 2, T.HOUSE_WALL);
+    g[6][3] = T.HOUSE_WINDOW;
+    g[6][6] = T.HOUSE_WINDOW;
     g[7][5] = T.HOUSE_DOOR_HERO;
 
-    // Right House: Friend's House (Blue Roof)
-    fillRect(g, 12, 3, 5, 2, T.ROOF_BLUE);
-    fillRect(g, 12, 5, 5, 3, T.WALL);
+    // Right Cottage: Friend's House (Pitched Blue Shingle Roof + Windows + Front Door)
+    fillRect(g, 12, 3, 6, 3, T.ROOF_BLUE);
+    fillRect(g, 12, 6, 6, 2, T.HOUSE_WALL);
+    g[6][13] = T.HOUSE_WINDOW;
+    g[6][16] = T.HOUSE_WINDOW;
     g[7][14] = T.HOUSE_DOOR_FRIEND;
 
     const npcs = [
@@ -138,20 +195,22 @@ window.SR = window.SR || {};
         x: 9, y: 5,
         skin: '#e0ac69', hair: '#ffbe0b', kitPrimary: '#3a86ff', kitSecondary: '#ffffff',
         role: 'PROLOGUE_FRIEND',
-        badge: '!',
+        alertIcon: true,
         dialogue: [
-          'Leo!! We need to rush to the school right now—the team of Jocks want to take over the gym, we need to beat them!',
-          'The school corridors are dark and crawling with hallway Jocks. We have to climb 2 floors of stairs to reach the Gym!',
-          'You can also pop into my house (Blue Roof) to say hi to my Mum before we head North!'
+          'Leo!! We need to rush to the school right now—the team of Jocks want to take over, we need to beat them!',
+          'You can also visit my Mum inside my house on the right before we head up the north road to the School!'
         ]
       }
     ];
 
     return {
       id: 'PROLOGUE_TOWN',
-      name: 'HOMETOWN STREET',
-      subtitle: 'Visit Your House, Friend\'s House, or Rush North to School!',
+      width: W,
+      height: H,
+      name: 'SUNNYVALE STREET',
+      subtitle: 'Neighborhood',
       grid: g,
+      decor: [],
       npcs: npcs,
       chests: [],
       props: [],
@@ -159,244 +218,335 @@ window.SR = window.SR || {};
       spawnOutsideHero: { x: 5, y: 8 },
       spawnOutsideFriend: { x: 14, y: 8 },
       spawnFromSchool: { x: 9, y: 2 },
-      labels: [
-        { x: 5.5, y: 2.7, text: 'YOUR HOUSE', color: '#ef476f' },
-        { x: 14.5, y: 2.7, text: 'FRIEND\'S HOUSE', color: '#4cc9f0' },
-        { x: 10, y: 0.8, text: '▲ TO HIGH SCHOOL', color: '#ffd166' }
-      ]
+      labels: []
     };
   }
 
-  // Prologue Map 2: Friend's House Interior (Living Room + Kitchen with Mum)
+  // Prologue Map 2: Friend's House Interior (Spacious Living Room + Full Kitchen & Dining, Zero Text Labels)
   function createFriendHouseMap() {
-    const g = makeGrid(T.WALL);
-    fillRect(g, 2, 3, 16, 12, T.WOOD_FLOOR);
+    const W = 20, H = 18;
+    const g = makeGrid(W, H, T.VOID);
 
-    // Divider wall partial between Living Room (Left) & Kitchen (Right)
-    fillRect(g, 10, 3, 1, 5, T.WALL);
+    fillRect(g, 2, 2, 16, 14, T.INT_WALL);
+    fillRect(g, 3, 4, 14, 11, T.WOOD_FLOOR);
 
-    // Living Room (Left): Rug, Sofa, TV, Bookshelf
-    fillRect(g, 4, 7, 4, 4, T.RUG);
-    g[3][4] = T.BOOKSHELF;
-    g[3][6] = T.TV_CONSOLE;
-    g[8][3] = T.SOFA;
-    g[9][3] = T.SOFA;
+    // Sunlit Windows along back wall
+    g[2][5] = T.INT_WINDOW;
+    g[2][13] = T.INT_WINDOW;
 
-    // Kitchen (Right): Counters, Stove & Sink
-    fillRect(g, 12, 3, 5, 1, T.KITCHEN_COUNTER);
-    g[5][16] = T.KITCHEN_COUNTER;
-    g[6][16] = T.KITCHEN_COUNTER;
+    // Partial room divider pillar between Living Room (Left) & Kitchen (Right)
+    fillRect(g, 10, 4, 1, 3, T.INT_WALL);
 
-    // Exit Door at bottom center
-    g[15][9] = T.HOUSE_DOOR_FRIEND;
+    // Living Room woven rug (Left)
+    fillRect(g, 4, 7, 5, 4, T.RUG);
+
+    // Exit doormat at bottom center
+    g[14][9] = T.DOORMAT_FRIEND;
+    g[14][10] = T.DOORMAT_FRIEND;
+
+    // Multi-tile Furniture Solid Footprints:
+    // Living Room: Wide Bookshelf (3..4, 3..4), TV Unit (6..7, 3..4), Coffee Table (5..6, 8), Big Sofa (4..6, 10..11), Plant (3, 12..13)
+    fillRect(g, 3, 3, 2, 2, T.FURNITURE_SOLID);
+    fillRect(g, 6, 3, 2, 2, T.FURNITURE_SOLID);
+    fillRect(g, 5, 8, 2, 1, T.FURNITURE_SOLID);
+    fillRect(g, 4, 10, 3, 2, T.FURNITURE_SOLID);
+    fillRect(g, 3, 12, 1, 2, T.FURNITURE_SOLID);
+
+    // Kitchen & Dining (Right): Full 4x2 Kitchen Counter Suite (12..15, 3..4) + 3x2 Family Dining Table (12..14, 9..10)
+    fillRect(g, 12, 3, 4, 2, T.FURNITURE_SOLID);
+    fillRect(g, 12, 9, 3, 2, T.FURNITURE_SOLID);
+
+    const decor = [
+      { kind: 'WIDE_BOOKSHELF', x: 3,  y: 3,  w: 2, h: 2 },
+      { kind: 'TV_AND_CONSOLE', x: 6,  y: 3,  w: 2, h: 2 },
+      { kind: 'COFFEE_TABLE',   x: 5,  y: 8,  w: 2, h: 1 },
+      { kind: 'BIG_SOFA',       x: 4,  y: 10, w: 3, h: 2 },
+      { kind: 'POTTED_PLANT',   x: 3,  y: 12, w: 1, h: 2 },
+      { kind: 'KITCHEN_SUITE',  x: 12, y: 3,  w: 4, h: 2 },
+      { kind: 'DINING_TABLE',   x: 12, y: 9,  w: 3, h: 2 }
+    ];
 
     const npcs = [
       {
         id: 'friend_mum',
-        name: 'Friend\'s Mum',
-        x: 13, y: 6,
-        skin: '#ffdbac', hair: '#e63946', kitPrimary: '#06d6a0', kitSecondary: '#ffffff',
+        name: 'Mum',
+        x: 14, y: 6,
+        skin: '#ffdbac', hair: '#e63946', kitPrimary: '#2a9d8f', kitSecondary: '#ffffff',
         role: 'MUM',
-        badge: '♥',
         dialogue: [
-          'Oh, hello Leo! Good luck with your adventure at the school today!',
-          'Those big Jocks think they run the place, but I know you and the boys will show them real teamwork!',
-          'Here, eat some fresh kitchen snacks before you go—your whole team\'s Stamina is 100% restored!'
+          'Oh, hello Leo! Good luck with your adventure today!',
+          'Those school Jocks are tough, so make sure you eat something warm before you go—your whole squad\'s Stamina is 100% restored!'
         ]
       }
     ];
 
     const props = [
-      { x: 12, y: 3, name: 'KITCHEN STOVE', text: 'Something delicious is simmering on the kitchen stove!' },
-      { x: 13, y: 3, name: 'KITCHEN COUNTER', text: 'Freshly sliced oranges and energy snacks for half-time!' },
-      { x: 6, y: 3, name: 'LIVING ROOM TV', text: 'A local news broadcast talks about the upcoming Regional Striker Tournament.' }
+      { x: 12, y: 3, w: 4, h: 2, name: 'Kitchen', text: 'Homemade soup is simmering on the stove beside fresh halftime orange slices!' },
+      { x: 12, y: 9, w: 3, h: 2, name: 'Dining Table', text: 'A warm family dining table set with a bowl of fresh fruit.' },
+      { x: 4, y: 10, w: 3, h: 2, name: 'Living Room Sofa', text: 'A super comfortable family couch!' },
+      { x: 6, y: 3, w: 2, h: 2, name: 'Television', text: 'Sports highlights from the Regional Striker League are playing on TV.' }
     ];
 
     return {
       id: 'PROLOGUE_FRIEND_HOUSE',
+      width: W,
+      height: H,
       name: 'FRIEND\'S HOUSE',
-      subtitle: 'Living Room & Kitchen — Talk to Mum',
+      subtitle: 'Living Room & Kitchen',
       grid: g,
+      decor: decor,
       npcs: npcs,
       chests: [],
       props: props,
       fogOfWar: false,
-      spawnDoor: { x: 9, y: 14 },
-      labels: [
-        { x: 5.5, y: 2.6, text: 'LIVING ROOM', color: '#4cc9f0' },
-        { x: 14.5, y: 2.6, text: 'KITCHEN', color: '#ffd166' },
-        { x: 9.5, y: 16.5, text: '▼ EXIT OUTSIDE', color: '#06d6a0' }
-      ]
+      spawnDoor: { x: 9, y: 13 },
+      labels: []
     };
   }
 
-  // Prologue Map 3 & 4: Procedural Roguelike School Floor (Rooms + Corridors + Fog of War + Chasing Enemies)
+  // Prologue Map 3 & 4: Scrolling Procedural High School (38x28) — Locker Corridors & Real Classrooms!
   function createSchoolRoguelikeFloor(floorNum) {
-    const g = makeGrid(T.WALL);
-    const rooms = [];
+    const MW = 38;
+    const MH = 28;
+    const g = makeGrid(MW, MH, T.VOID);
+    const decor = [];
+    const props = [];
 
-    // Try placing 5 to 6 non-overlapping classrooms on the 20x18 grid
-    const attempts = 45;
-    for (let a = 0; a < attempts && rooms.length < 6; a++) {
-      const rw = 4 + Math.floor(Math.random() * 2); // 4..5
-      const rh = 3 + Math.floor(Math.random() * 2); // 3..4
-      const rx = 1 + Math.floor(Math.random() * (W - rw - 2));
-      const ry = 1 + Math.floor(Math.random() * (H - rh - 2));
+    // 1. Build Main School Hallway Spine +Randomized Cross-Corridor
+    // Horizontal Hallway runs across y = 12..14 (3 tiles wide!) from x = 3..34
+    fillRect(g, 2, 11, 34, 5, T.SCHOOL_WALL);
+    fillRect(g, 3, 12, 32, 3, T.SCHOOL_FLOOR);
 
-      let overlaps = false;
-      for (let i = 0; i < rooms.length; i++) {
-        const o = rooms[i];
-        if (rx < o.x + o.w + 1 && rx + rw + 1 > o.x && ry < o.y + o.h + 1 && ry + rh + 1 > o.y) {
-          overlaps = true;
-          break;
-        }
-      }
-      if (!overlaps) {
-        rooms.push({
-          x: rx, y: ry, w: rw, h: rh,
-          cx: Math.floor(rx + rw / 2),
-          cy: Math.floor(ry + rh / 2)
-        });
-        fillRect(g, rx, ry, rw, rh, T.SCHOOL_FLOOR);
-      }
+    // Line the Main Hallway top wall (y = 11) with Blue Lockers & School Windows!
+    for (let x = 4; x <= 33; x++) {
+      g[11][x] = (x % 5 === 0) ? T.SCHOOL_WINDOW : T.LOCKER;
     }
 
-    // Fallback guarantee: if fewer than 4 rooms spawned, add deterministic corner rooms
-    const fallbackRooms = [
-      { x: 2, y: 12, w: 4, h: 4, cx: 4, cy: 14 },
-      { x: 2, y: 2,  w: 4, h: 4, cx: 4, cy: 4 },
-      { x: 8, y: 7,  w: 4, h: 4, cx: 10, cy: 9 },
-      { x: 14, y: 2, w: 4, h: 4, cx: 16, cy: 4 },
-      { x: 14, y: 12, w: 4, h: 4, cx: 16, cy: 14 }
+    // Candidate Classroom Bays along North Wing (y: 3..10) and South Wing (y: 16..23)
+    // Each bay is 7 tiles wide (interior) + walls!
+    const candidateBays = [
+      { side: 'N', x: 3,  y: 3,  w: 7, h: 7 },
+      { side: 'N', x: 12, y: 3,  w: 7, h: 7 },
+      { side: 'N', x: 21, y: 3,  w: 7, h: 7 },
+      { side: 'N', x: 29, y: 3,  w: 6, h: 7 },
+      { side: 'S', x: 3,  y: 16, w: 7, h: 8 },
+      { side: 'S', x: 12, y: 16, w: 7, h: 8 },
+      { side: 'S', x: 21, y: 16, w: 7, h: 8 },
+      { side: 'S', x: 29, y: 16, w: 6, h: 8 }
     ];
-    for (let f = 0; f < fallbackRooms.length && rooms.length < 5; f++) {
-      const fr = fallbackRooms[f];
-      fillRect(g, fr.x, fr.y, fr.w, fr.h, T.SCHOOL_FLOOR);
-      rooms.push(fr);
-    }
 
-    // Connect each room to the next with an L-shaped corridor
-    for (let i = 0; i < rooms.length - 1; i++) {
-      const r1 = rooms[i];
-      const r2 = rooms[i + 1];
-      let x = r1.cx;
-      let y = r1.cy;
-      while (x !== r2.cx) {
-        g[y][x] = T.SCHOOL_FLOOR;
-        x += (r2.cx > x ? 1 : -1);
-      }
-      while (y !== r2.cy) {
-        g[y][x] = T.SCHOOL_FLOOR;
-        y += (r2.cy > y ? 1 : -1);
-      }
-      g[y][x] = T.SCHOOL_FLOOR;
-    }
+    // Randomly pick 6 out of the 8 classroom bays each run so every floor layout feels fresh!
+    shuffleArray(candidateBays);
+    const chosenBays = candidateBays.slice(0, 6);
 
-    // Room 0 = Player Spawn Room
-    const startRoom = rooms[0];
+    const classrooms = [];
+
+    chosenBays.forEach((bay) => {
+      const rx = bay.x;
+      const ry = bay.y;
+      const rw = bay.w;
+      const rh = bay.h;
+
+      // Carve outer walls + warm classroom floor interior
+      fillRect(g, rx - 1, ry - 1, rw + 2, rh + 2, T.SCHOOL_WALL);
+      fillRect(g, rx, ry, rw, rh, T.CLASSROOM_FLOOR);
+
+      // Connect Classroom to Main Hallway via a 2-tile-wide Classroom Doorway + short vestibule!
+      const doorX = rx + Math.floor(rw / 2) - 1;
+      if (bay.side === 'N') {
+        // North classroom sits at y = 3..9; hallway top wall is y = 11, hallway floor is y = 12
+        g[ry + rh][doorX] = T.CLASSROOM_DOOR;
+        g[ry + rh][doorX + 1] = T.CLASSROOM_DOOR;
+        g[11][doorX] = T.CLASSROOM_DOOR;
+        g[11][doorX + 1] = T.CLASSROOM_DOOR;
+
+        // Sunlit School Windows on North outer wall (ry - 1)
+        g[ry - 1][rx + 1] = T.SCHOOL_WINDOW;
+        g[ry - 1][rx + rw - 2] = T.SCHOOL_WINDOW;
+
+        // Green Chalkboard centered on North wall + Teacher's Desk!
+        const cbX = rx + Math.floor((rw - 3) / 2);
+        decor.push({ kind: 'CHALKBOARD', x: cbX, y: ry - 1, w: 3, h: 1 });
+        decor.push({ kind: 'TEACHER_DESK', x: rx + 1, y: ry + 1, w: 2, h: 1 });
+        g[ry + 1][rx + 1] = T.FURNITURE_SOLID;
+        g[ry + 1][rx + 2] = T.FURNITURE_SOLID;
+      } else {
+        // South classroom sits at y = 16..23; hallway bottom wall is y = 15, hallway floor is y = 14
+        g[15][doorX] = T.CLASSROOM_DOOR;
+        g[15][doorX + 1] = T.CLASSROOM_DOOR;
+
+        // Green Chalkboard on South classroom's north wall (to the left of the door)
+        if (rw >= 7) {
+          decor.push({ kind: 'CHALKBOARD', x: rx, y: 15, w: 3, h: 1 });
+        }
+        decor.push({ kind: 'TEACHER_DESK', x: rx + 1, y: ry + rh - 2, w: 2, h: 1 });
+        g[ry + rh - 2][rx + 1] = T.FURNITURE_SOLID;
+        g[ry + rh - 2][rx + 2] = T.FURNITURE_SOLID;
+      }
+
+      // Place neat rows of Student Desks inside the classroom (leaving wide clear aisles!)
+      const deskRows = [ry + 3, ry + 5];
+      const deskCols = rw >= 7 ? [rx + 1, rx + 3, rx + 5] : [rx + 1, rx + 4];
+      deskRows.forEach(dy => {
+        deskCols.forEach(dx => {
+          if (dy < ry + rh - 1 && dx < rx + rw - 1) {
+            g[dy][dx] = T.STUDENT_DESK;
+          }
+        });
+      });
+
+      // Safe open center/aisle tile inside this classroom for spawning Player, Stairs, Enemy, or Gym Bag!
+      const openX = rx + Math.floor(rw / 2);
+      const openY = ry + 2;
+      g[openY][openX] = T.CLASSROOM_FLOOR;
+
+      classrooms.push({
+        x: rx, y: ry, w: rw, h: rh,
+        cx: openX,
+        cy: openY,
+        side: bay.side
+      });
+    });
+
+    // Sort classrooms left-to-right so Player starts on the West end and Stairs are on the East end (or vice versa randomly!)
+    classrooms.sort((a, b) => a.x - b.x);
+    if (Math.random() < 0.5) classrooms.reverse();
+
+    // Classroom 0: Player Spawn Classroom
+    const startRoom = classrooms[0];
     const spawnPos = { x: startRoom.cx, y: startRoom.cy };
 
-    // Last Room = Stairs Up to Next Floor (or Gym)
-    const stairsRoom = rooms[rooms.length - 1];
+    // Last Classroom: School Stairwell Room (2x1 wide stairs up to next floor / Gym!)
+    const stairsRoom = classrooms[classrooms.length - 1];
     g[stairsRoom.cy][stairsRoom.cx] = T.STAIRS_UP;
+    if (g[stairsRoom.cy][stairsRoom.cx + 1] === T.CLASSROOM_FLOOR) {
+      g[stairsRoom.cy][stairsRoom.cx + 1] = T.STAIRS_UP;
+    }
 
-    // Intermediate Rooms: each gets EITHER 1 Chasing Enemy OR 1 Item Chest!
+    // Intermediate Classrooms: Each room has EITHER 1 Chasing Varsity Jock OR 1 Sports Gym Bag!
     const npcs = [];
     const chests = [];
-    for (let i = 1; i < rooms.length - 1; i++) {
-      const rm = rooms[i];
+    for (let i = 1; i < classrooms.length - 1; i++) {
+      const rm = classrooms[i];
       if (i % 2 === 1) {
-        // Spawn 1 Hallway Jock Enemy who chases when in sight!
         npcs.push({
           id: `school_f${floorNum}_enemy_${i}`,
-          name: `Hallway Jock #${floorNum}${i}`,
+          name: `Varsity Jock`,
           x: rm.cx,
           y: rm.cy,
           skin: '#f4c29f',
-          hair: '#ef476f',
-          kitPrimary: '#ef476f',
-          kitSecondary: '#ffd166',
+          hair: '#ffd166',
+          kitPrimary: '#c1121f',
+          kitSecondary: '#ffffff',
           role: 'SCHOOL_ENEMY',
           chaser: true,
           alerted: false,
           defeated: false,
-          badge: 'VS',
           teamName: `Hallway Jocks ${floorNum}-${i}`
         });
       } else {
-        // Spawn 1 Item Chest in the room!
         chests.push({
-          id: `school_f${floorNum}_chest_${i}`,
+          id: `school_f${floorNum}_bag_${i}`,
           x: rm.cx,
           y: rm.cy,
           opened: false,
           isQuest: false,
+          isGymBag: true,
           cash: 35 + floorNum * 15,
           item: 'ENERGY_DRINK'
         });
       }
     }
 
+    // Add 1 extra patrolling Hallway Jock in the far end of the locker corridor!
+    const hallJockX = startRoom.x < 18 ? 26 : 10;
+    npcs.push({
+      id: `school_f${floorNum}_hall_jock`,
+      name: 'Hall Monitor Jock',
+      x: hallJockX,
+      y: 13,
+      skin: '#e0ac69',
+      hair: '#ef476f',
+      kitPrimary: '#c1121f',
+      kitSecondary: '#ffd166',
+      role: 'SCHOOL_ENEMY',
+      chaser: true,
+      alerted: false,
+      defeated: false,
+      teamName: `Corridor Jocks ${floorNum}`
+    });
+
     return {
       id: `PROLOGUE_SCHOOL_F${floorNum}`,
-      name: `SCHOOL CORRIDORS — ${floorNum}F`,
-      subtitle: 'Roguelike Floor — Explore Rooms & Find the Stairs!',
+      width: MW,
+      height: MH,
+      name: `HIGH SCHOOL — ${floorNum}F`,
+      subtitle: 'Classrooms & Corridors',
       grid: g,
+      decor: decor,
       npcs: npcs,
       chests: chests,
-      props: [],
+      props: props,
       fogOfWar: true,
-      visionRadius: 4.5,
-      explored: makeBoolGrid(false),
+      visionRadius: 5.5,
+      explored: makeBoolGrid(MW, MH, false),
       spawnStart: spawnPos,
       labels: []
     };
   }
 
-  // Prologue Map 5: School Gymnasium (Mini-Boss vs The Team of Jocks!)
+  // Prologue Map 5: High School Gymnasium (Polished Court, Zero Floating Text Labels)
   function createSchoolGymMap() {
-    const g = makeGrid(T.WALL);
-    fillRect(g, 2, 2, 16, 14, T.GYM_FLOOR);
+    const W = 20, H = 18;
+    const g = makeGrid(W, H, T.VOID);
+    fillRect(g, 1, 1, 18, 16, T.SCHOOL_WALL);
+    fillRect(g, 2, 3, 16, 13, T.GYM_FLOOR);
+
+    // Windows high up on Gym North Wall
+    g[1][4] = T.SCHOOL_WINDOW;
+    g[1][7] = T.SCHOOL_WINDOW;
+    g[1][12] = T.SCHOOL_WINDOW;
+    g[1][15] = T.SCHOOL_WINDOW;
 
     // Painted court boundary & center line
-    fillRect(g, 3, 3, 14, 1, T.GYM_LINE);
+    fillRect(g, 3, 4, 14, 1, T.GYM_LINE);
     fillRect(g, 3, 14, 14, 1, T.GYM_LINE);
-    fillRect(g, 3, 3, 1, 12, T.GYM_LINE);
-    fillRect(g, 16, 3, 1, 12, T.GYM_LINE);
-    fillRect(g, 3, 8, 14, 1, T.GYM_LINE);
+    fillRect(g, 3, 4, 1, 11, T.GYM_LINE);
+    fillRect(g, 16, 4, 1, 11, T.GYM_LINE);
+    fillRect(g, 3, 9, 14, 1, T.GYM_LINE);
 
-    // Indoor Futsal Goals at North End
-    g[2][9] = T.GOAL_TOP;
-    g[2][10] = T.GOAL_TOP;
+    // Indoor Futsal Goal at North End
+    g[3][9] = T.GOAL_TOP;
+    g[3][10] = T.GOAL_TOP;
 
     const npcs = [
       {
         id: 'school_jock_boss',
         name: 'Varsity Capt. Chad',
-        x: 9, y: 5,
+        x: 9, y: 6,
         skin: '#e0ac69',
         hair: '#ffd166',
         kitPrimary: '#c1121f',
         kitSecondary: '#ffd166',
         role: 'SCHOOL_BOSS',
-        badge: 'BOSS',
         teamName: 'Varsity Jocks V'
       }
     ];
 
     return {
       id: 'PROLOGUE_SCHOOL_GYM',
-      name: 'HIGH SCHOOL GYMNASIUM',
-      subtitle: 'Showdown vs The Team of Jocks!',
+      width: W,
+      height: H,
+      name: 'SCHOOL GYMNASIUM',
+      subtitle: 'Showdown vs The Jocks',
       grid: g,
+      decor: [],
       npcs: npcs,
       chests: [],
       props: [],
       fogOfWar: false,
       spawnStart: { x: 9, y: 13 },
-      labels: [
-        { x: 9.5, y: 4.0, text: '★ THE VARSITY JOCKS ★', color: '#ffd166' }
-      ]
+      labels: []
     };
   }
 
@@ -405,16 +555,16 @@ window.SR = window.SR || {};
       isPrologue: true,
       region: {
         id: 0,
-        name: 'Prologue: High School Takeover',
-        townName: 'HOMETOWN STREET',
-        palette: { turf1: '#2d6a4f', turf2: '#1b4332', road: '#6c584c', wall: '#3d352e' }
+        name: 'Prologue: High School',
+        townName: 'SUNNYVALE STREET',
+        palette: { turf1: '#388659', turf2: '#2d6a4f', road: '#b09878', wall: '#3d352e' }
       },
       maps: [
         createBedroomMap(),                 // 0: Hero's Bedroom
         createHometownMap(),                // 1: Hometown Outside
         createFriendHouseMap(),             // 2: Friend's House (Living Room & Kitchen with Mum)
-        createSchoolRoguelikeFloor(1),      // 3: School Floor 1 (Random Rooms & Corridors + Fog of War)
-        createSchoolRoguelikeFloor(2),      // 4: School Floor 2 (Random Rooms & Corridors + Fog of War)
+        createSchoolRoguelikeFloor(1),      // 3: School Floor 1 (38x28 Scrolling Classrooms & Locker Corridors)
+        createSchoolRoguelikeFloor(2),      // 4: School Floor 2 (38x28 Scrolling Classrooms & Locker Corridors)
         createSchoolGymMap()                // 5: School Gym (Team of Jocks Mini-Boss)
       ]
     };
@@ -425,11 +575,12 @@ window.SR = window.SR || {};
   // =========================================================================
 
   function createTownMap(region) {
-    const g = makeGrid(T.GRASS);
-    fillRect(g, 0, 0, W, 1, T.WALL);
-    fillRect(g, 0, H - 1, W, 1, T.WALL);
-    fillRect(g, 0, 0, 1, H, T.WALL);
-    fillRect(g, W - 1, 0, 1, H, T.WALL);
+    const W = 20, H = 18;
+    const g = makeGrid(W, H, T.GRASS);
+    fillRect(g, 0, 0, W, 1, T.TREE);
+    fillRect(g, 0, H - 1, W, 1, T.TREE);
+    fillRect(g, 0, 0, 1, H, T.TREE);
+    fillRect(g, W - 1, 0, 1, H, T.TREE);
 
     fillRect(g, 8, 1, 4, H - 2, T.ROAD);
     fillRect(g, 3, 7, 14, 3, T.ROAD);
@@ -438,16 +589,28 @@ window.SR = window.SR || {};
     g[1][9] = T.PORTAL_UP;
     g[1][10] = T.PORTAL_UP;
 
+    // Clubhouse Building (Left — Red Roof + Pixel Ball Emblem)
     fillRect(g, 3, 3, 5, 2, T.ROOF_RED);
-    fillRect(g, 3, 5, 5, 2, T.WALL);
+    fillRect(g, 3, 5, 5, 2, T.HOUSE_WALL);
+    g[5][4] = T.HOUSE_WINDOW;
+    g[5][6] = T.HOUSE_WINDOW;
     g[6][5] = T.CLUB_DOOR;
 
+    // Pro Kit Shop Building (Right — Blue Roof + Pixel Jersey Emblem)
     fillRect(g, 12, 3, 5, 2, T.ROOF_BLUE);
-    fillRect(g, 12, 5, 5, 2, T.WALL);
+    fillRect(g, 12, 5, 5, 2, T.HOUSE_WALL);
+    g[5][13] = T.HOUSE_WINDOW;
+    g[5][15] = T.HOUSE_WINDOW;
     g[6][14] = T.SHOP_DOOR;
 
+    // Mini practice pitch in bottom-left
     fillRect(g, 2, 11, 5, 5, T.PITCH_LINE);
     fillRect(g, 3, 12, 3, 3, T.GRASS);
+
+    const decor = [
+      { kind: 'CLUB_SIGN', x: 5,  y: 4, w: 1, h: 1 },
+      { kind: 'SHOP_SIGN', x: 14, y: 4, w: 1, h: 1 }
+    ];
 
     const npcs = [
       {
@@ -456,10 +619,9 @@ window.SR = window.SR || {};
         x: 8, y: 10,
         skin: '#c68642', hair: '#edf2f4', kitPrimary: '#2ec4b6', kitSecondary: '#1a1a1a',
         role: 'COACH',
-        badge: 'TIP',
         dialogue: [
           `Welcome to ${region.townName} Base Camp, Captain! Amazing job beating the School Jocks!`,
-          `Step into the CLUBHOUSE (Red Roof) to recruit Free Agents & heal Stamina, visit the SHOP (Blue Roof), or head NORTH toward the Stadium!`
+          `Step into the left building (Ball Sign) to recruit Free Agents & heal Stamina, visit the Shop on the right (Jersey Sign), or head North!`
         ]
       },
       {
@@ -468,32 +630,32 @@ window.SR = window.SR || {};
         x: 13, y: 11,
         skin: '#e0ac69', hair: '#ffd166', kitPrimary: '#9b5de5', kitSecondary: '#ffffff',
         role: 'QUEST_GIVER',
-        badge: '!',
+        alertIcon: true,
         dialogue: []
       }
     ];
 
     return {
       zoneIndex: 0,
+      width: W,
+      height: H,
       name: region.townName,
-      subtitle: 'Base Camp — Clubhouse, Shop & Quests',
+      subtitle: 'Base Camp',
       grid: g,
+      decor: decor,
       npcs: npcs,
       chests: [],
       props: [],
       fogOfWar: false,
       spawnDown: { x: 9, y: 13 },
       spawnFromNorth: { x: 9, y: 2 },
-      labels: [
-        { x: 5.5, y: 2.7, text: 'CLUB & RECRUITS', color: '#ffd166' },
-        { x: 14.5, y: 2.7, text: 'PRO KIT SHOP', color: '#4cc9f0' },
-        { x: 10, y: 0.8, text: '▲ TO DUNGEON', color: '#06d6a0' }
-      ]
+      labels: []
     };
   }
 
   function createDungeonMap(region) {
-    const g = makeGrid(T.WALL);
+    const W = 20, H = 18;
+    const g = makeGrid(W, H, T.WALL);
     fillRect(g, 2, 2, 16, 14, T.GRASS);
 
     const layoutSeed = region.id;
@@ -555,7 +717,6 @@ window.SR = window.SR || {};
         skin: '#f4c29f', hair: '#ef476f', kitPrimary: '#ef476f', kitSecondary: '#111',
         role: 'RIVAL',
         defeated: false,
-        badge: 'VS',
         teamName: 'Back-Alley Strikers'
       },
       {
@@ -565,31 +726,31 @@ window.SR = window.SR || {};
         skin: '#c68642', hair: '#ffd166', kitPrimary: '#f77f00', kitSecondary: '#111',
         role: 'RIVAL',
         defeated: false,
-        badge: 'VS',
         teamName: 'Neon Turbos V'
       }
     ];
 
     return {
       zoneIndex: 1,
+      width: W,
+      height: H,
       name: region.dungeonName,
-      subtitle: 'Wild Turf & Rivals — Find Chests & Advance North',
+      subtitle: 'Wild Turf & Rivals',
       grid: g,
+      decor: [],
       npcs: npcs,
       chests: chests,
       props: [],
       fogOfWar: false,
       spawnDown: { x: 9, y: 15 },
       spawnFromNorth: { x: 9, y: 2 },
-      labels: [
-        { x: 10, y: 0.8, text: '▲ TO STADIUM BOSS', color: '#ffd166' },
-        { x: 10, y: 17.3, text: '▼ BACK TO TOWN', color: '#4cc9f0' }
-      ]
+      labels: []
     };
   }
 
   function createStadiumMap(region) {
-    const g = makeGrid(T.WALL);
+    const W = 20, H = 18;
+    const g = makeGrid(W, H, T.WALL);
     fillRect(g, 2, 2, 16, 14, T.GRASS);
     fillRect(g, 3, 3, 14, 1, T.PITCH_LINE);
     fillRect(g, 3, 14, 14, 1, T.PITCH_LINE);
@@ -615,7 +776,6 @@ window.SR = window.SR || {};
         kitPrimary: region.boss.kitPrimary,
         kitSecondary: region.boss.kitSecondary,
         role: 'BOSS',
-        badge: 'BOSS',
         teamName: region.boss.teamName
       },
       {
@@ -626,26 +786,25 @@ window.SR = window.SR || {};
         hair: '#06d6a0',
         kitPrimary: '#06d6a0',
         kitSecondary: '#ffffff',
-        role: 'MEDIC',
-        badge: 'HEAL'
+        role: 'MEDIC'
       }
     ];
 
     return {
       zoneIndex: 2,
+      width: W,
+      height: H,
       name: region.stadiumName,
-      subtitle: `Championship Match vs ${region.boss.teamName}`,
+      subtitle: region.boss.teamName,
       grid: g,
+      decor: [],
       npcs: npcs,
       chests: [],
       props: [],
       fogOfWar: false,
       spawnDown: { x: 9, y: 14 },
       spawnFromNorth: { x: 9, y: 14 },
-      labels: [
-        { x: 9.5, y: 4.1, text: `★ ${region.boss.teamName.toUpperCase()} ★`, color: '#ffd166' },
-        { x: 10, y: 17.3, text: '▼ TUNNEL EXIT', color: '#4cc9f0' }
-      ]
+      labels: []
     };
   }
 
@@ -664,7 +823,19 @@ window.SR = window.SR || {};
 
   SR.isTileBlocked = function (tile) {
     return (
+      tile === T.VOID ||
       tile === T.WALL ||
+      tile === T.INT_WALL ||
+      tile === T.INT_WINDOW ||
+      tile === T.HOUSE_WALL ||
+      tile === T.HOUSE_WINDOW ||
+      tile === T.TREE ||
+      tile === T.FENCE ||
+      tile === T.FURNITURE_SOLID ||
+      tile === T.SCHOOL_WALL ||
+      tile === T.SCHOOL_WINDOW ||
+      tile === T.LOCKER ||
+      tile === T.STUDENT_DESK ||
       tile === T.ROOF_RED ||
       tile === T.ROOF_BLUE ||
       tile === T.WATER ||

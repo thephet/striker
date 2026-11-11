@@ -8,23 +8,23 @@ window.SR = window.SR || {};
 
     // Roguelite Meta & Run State
     coachLegacyLevel: 0,
-    regionIndex: 0, // 0 = Reg 1, 1 = Reg 2, 2 = Reg 3
+    regionIndex: 0,
     world: null,
     currentMapIndex: 0,
 
     // Cutscene state in Bedroom (0 = inactive, 1 = Grandad wakes you, 2 = 5 friends enter room)
     cutsceneStage: 0,
 
-    playerPos: { x: 4, y: 4 },
+    playerPos: { x: 4, y: 5 },
     playerFacing: { dx: 0, dy: 1 },
 
     cash: 150,
     contracts: 2,
-    morale: 3, // 3 hearts/strikes per Season Run
+    morale: 3,
     squad: [],
     bag: ['ENERGY_DRINK'],
     freeAgents: [],
-    questState: {}, // { [regionId]: 'NOT_STARTED' | 'ACTIVE' | 'FOUND_ITEM' | 'COMPLETED' }
+    questState: {},
 
     init: function () {
       this.canvas = document.getElementById('gameCanvas');
@@ -56,16 +56,16 @@ window.SR = window.SR || {};
       this.cutsceneStage = 1;
       this.updateTopHud();
 
-      // Step 1 of Cutscene: Grandad opens the door and says "Wake up! Your friends are here!"
+      // Step 1: Grandad opens the door and says "Wake up! Your friends are here!"
       SR.UI.showDialogue('Grandad', [
         'Wake up! Your friends are here!'
       ], () => {
-        // Step 2 of Cutscene: The 5 team players enter the bedroom!
+        // Step 2: The 5 team players enter the room!
         this.cutsceneStage = 2;
         SR.UI.showDialogue('Teammates', [
-          'Your 5 teammates rush into your room, ready for kick-off!'
+          'Your 5 teammates walk into your room, ready to roll!'
         ], () => {
-          // Step 3 of Cutscene: Blank screen showing the 5 characters + names + stats
+          // Step 3: Blank screen showing the 5 characters + names + stats
           SR.UI.openTeamShowcase(() => {
             // Step 4: Player clicks Next -> Spawn outside Hero's House in Hometown!
             this.cutsceneStage = 0;
@@ -75,8 +75,7 @@ window.SR = window.SR || {};
             this.updateTopHud();
 
             SR.UI.showDialogue('Axel (Teammate)', [
-              'We need to rush to the school! The team of Jocks want to take over, we need to beat them!',
-              'You can go back inside your house anytime, visit my Mum in the house next door (Blue Roof), or head NORTH to the High School!'
+              'We need to rush to the school! The team of Jocks want to take over, we need to beat them!'
             ]);
           });
         });
@@ -90,7 +89,6 @@ window.SR = window.SR || {};
       const town = this.world.maps[0];
       this.playerPos = { x: town.spawnDown.x, y: town.spawnDown.y };
 
-      // Populate 3 Free Agents for this region's Clubhouse
       this.freeAgents = [];
       for (let i = 0; i < 3; i++) {
         const tpl = SR.RECRUIT_POOL[(regIdx * 2 + i) % SR.RECRUIT_POOL.length];
@@ -104,6 +102,25 @@ window.SR = window.SR || {};
       return this.world.maps[this.currentMapIndex];
     },
 
+    getCamera: function () {
+      const map = this.currentMap();
+      const mw = (map && map.width) || 20;
+      const mh = (map && map.height) || 18;
+      return {
+        x: Math.max(0, Math.min(mw - 20, this.playerPos.x - 10)),
+        y: Math.max(0, Math.min(mh - 18, this.playerPos.y - 9))
+      };
+    },
+
+    findPropAt: function (map, tx, ty) {
+      if (!map || !map.props) return null;
+      return map.props.find(p => {
+        const pw = p.w || 1;
+        const ph = p.h || 1;
+        return tx >= p.x && tx < p.x + pw && ty >= p.y && ty < p.y + ph;
+      }) || null;
+    },
+
     removeBagItem: function (idx) {
       if (idx >= 0 && idx < this.bag.length) {
         this.bag.splice(idx, 1);
@@ -114,9 +131,11 @@ window.SR = window.SR || {};
     updateFogOfWar: function () {
       const map = this.currentMap();
       if (!map || !map.fogOfWar || !map.explored) return;
-      const r = map.visionRadius || 4.5;
-      for (let y = 0; y < 18; y++) {
-        for (let x = 0; x < 20; x++) {
+      const mw = map.width || 20;
+      const mh = map.height || 18;
+      const r = map.visionRadius || 5.5;
+      for (let y = 0; y < mh; y++) {
+        for (let x = 0; x < mw; x++) {
           const dist = Math.hypot(x - this.playerPos.x, y - this.playerPos.y);
           if (dist <= r) {
             map.explored[y][x] = true;
@@ -160,9 +179,7 @@ window.SR = window.SR || {};
       }
     },
 
-    // Unified Input Dispatcher ('UP', 'DOWN', 'LEFT', 'RIGHT', 'A', 'B', 'START', 'SELECT')
     handleActionInput: function (cmd) {
-      // 1. If Match is active, route to Match Engine
       if (SR.Match.active) {
         if (SR.Match.subState === 'ANIM_RESULT' || SR.Match.subState === 'MATCH_OVER') {
           if (cmd === 'A' || cmd === 'B' || cmd === 'START') {
@@ -178,13 +195,11 @@ window.SR = window.SR || {};
         return;
       }
 
-      // 2. If UI Modal/Dialogue is open, route to UI
       if (SR.UI.mode !== 'NONE') {
         SR.UI.handleInput(cmd, this);
         return;
       }
 
-      // 3. Overworld Controls
       if (cmd === 'START') {
         SR.UI.openSquadMenu();
         return;
@@ -205,8 +220,10 @@ window.SR = window.SR || {};
       const nx = this.playerPos.x + dx;
       const ny = this.playerPos.y + dy;
       const map = this.currentMap();
+      const mw = map.width || 20;
+      const mh = map.height || 18;
 
-      if (nx < 0 || nx >= 20 || ny < 0 || ny >= 18) return;
+      if (nx < 0 || nx >= mw || ny < 0 || ny >= mh) return;
 
       // Check if an undefeated NPC is standing on (nx, ny) -> interact with them!
       const npcAtDest = map.npcs.find(n => n.x === nx && n.y === ny && !n.defeated);
@@ -215,7 +232,7 @@ window.SR = window.SR || {};
         return;
       }
 
-      // Check if an unopened Chest is at (nx, ny) -> open it!
+      // Check if an unopened Chest / Gym Bag is at (nx, ny) -> open it!
       const chestAtDest = map.chests.find(c => c.x === nx && c.y === ny && !c.opened);
       if (chestAtDest) {
         this.openChest(chestAtDest);
@@ -224,16 +241,14 @@ window.SR = window.SR || {};
 
       const tile = map.grid[ny][nx];
 
-      // Check if bumping into an interactive prop (TV/Console, Bookshelf, Sofa, Kitchen Stove)
+      // Check if bumping into an interactive multi-tile furniture prop (Bed, Sofa, TV & Console, Bookshelf, Kitchen)
       if (SR.isTileBlocked(tile)) {
-        if (map.props) {
-          const prop = map.props.find(p => p.x === nx && p.y === ny);
-          if (prop) {
-            if (prop.heal) {
-              this.squad.forEach(p => { p.sta = p.maxSta; });
-            }
-            SR.UI.showDialogue(prop.name, [prop.text]);
+        const prop = this.findPropAt(map, nx, ny);
+        if (prop) {
+          if (prop.heal) {
+            this.squad.forEach(p => { p.sta = p.maxSta; });
           }
+          SR.UI.showDialogue(prop.name, [prop.text]);
         }
         return;
       }
@@ -243,80 +258,81 @@ window.SR = window.SR || {};
       this.playerPos.y = ny;
       this.updateFogOfWar();
 
-      // Check Prologue Doors & School Stairs
+      // Check Prologue Doors, Doormats & School Stairs
       if (this.world.isPrologue) {
-        if (tile === SR.TILE.HOUSE_DOOR_HERO) {
-          if (this.currentMapIndex === 1) {
-            // Enter Hero's Bedroom from Hometown
-            this.currentMapIndex = 0;
-            const bedMap = this.currentMap();
-            this.playerPos = { x: bedMap.spawnDoor.x, y: bedMap.spawnDoor.y };
-          } else {
-            // Exit Hero's Bedroom to Hometown
-            this.currentMapIndex = 1;
-            const town = this.currentMap();
-            this.playerPos = { x: town.spawnOutsideHero.x, y: town.spawnOutsideHero.y };
-          }
+        // Enter Hero's House from Hometown
+        if (tile === SR.TILE.HOUSE_DOOR_HERO && this.currentMapIndex === 1) {
+          this.currentMapIndex = 0;
+          const bedMap = this.currentMap();
+          this.playerPos = { x: bedMap.spawnDoor.x, y: bedMap.spawnDoor.y };
+          this.updateTopHud();
+          return;
+        }
+        // Exit Hero's Bedroom via Doormat
+        if (tile === SR.TILE.DOORMAT_HERO && this.currentMapIndex === 0) {
+          this.currentMapIndex = 1;
+          const town = this.currentMap();
+          this.playerPos = { x: town.spawnOutsideHero.x, y: town.spawnOutsideHero.y };
           this.updateTopHud();
           return;
         }
 
-        if (tile === SR.TILE.HOUSE_DOOR_FRIEND) {
-          if (this.currentMapIndex === 1) {
-            // Enter Friend's House from Hometown
-            this.currentMapIndex = 2;
-            const fMap = this.currentMap();
-            this.playerPos = { x: fMap.spawnDoor.x, y: fMap.spawnDoor.y };
-          } else {
-            // Exit Friend's House to Hometown
-            this.currentMapIndex = 1;
-            const town = this.currentMap();
-            this.playerPos = { x: town.spawnOutsideFriend.x, y: town.spawnOutsideFriend.y };
-          }
+        // Enter Friend's House from Hometown
+        if (tile === SR.TILE.HOUSE_DOOR_FRIEND && this.currentMapIndex === 1) {
+          this.currentMapIndex = 2;
+          const fMap = this.currentMap();
+          this.playerPos = { x: fMap.spawnDoor.x, y: fMap.spawnDoor.y };
+          this.updateTopHud();
+          return;
+        }
+        // Exit Friend's House via Doormat
+        if (tile === SR.TILE.DOORMAT_FRIEND && this.currentMapIndex === 2) {
+          this.currentMapIndex = 1;
+          const town = this.currentMap();
+          this.playerPos = { x: town.spawnOutsideFriend.x, y: town.spawnOutsideFriend.y };
           this.updateTopHud();
           return;
         }
 
+        // Enter High School 1F from Hometown North Road!
         if (tile === SR.TILE.PORTAL_UP && this.currentMapIndex === 1) {
-          // Enter High School 1F from Hometown!
           this.currentMapIndex = 3;
           const s1 = this.currentMap();
           this.playerPos = { x: s1.spawnStart.x, y: s1.spawnStart.y };
           this.updateFogOfWar();
           this.updateTopHud();
           SR.UI.showDialogue('HIGH SCHOOL — 1F', [
-            'The school lights are dim! Explore the classrooms and corridors to find the STAIRS UP to the 2nd Floor.',
-            'Watch out: if a Hallway Jock spots you inside your vision circle, they will chase you!'
+            'Search the classrooms and locker corridors to find the Stairwell up to the 2nd Floor!',
+            'Stay sharp: if a Varsity Jock spots you, they will chase you down the halls!'
           ]);
           return;
         }
 
+        // Climb School Stairwells!
         if (tile === SR.TILE.STAIRS_UP) {
           if (this.currentMapIndex === 3) {
-            // Climb from 1F to 2F
             this.currentMapIndex = 4;
             const s2 = this.currentMap();
             this.playerPos = { x: s2.spawnStart.x, y: s2.spawnStart.y };
             this.updateFogOfWar();
             this.updateTopHud();
             SR.UI.showDialogue('HIGH SCHOOL — 2F', [
-              'You reached the 2nd Floor! Find the next staircase to enter the School Gymnasium!'
+              '2nd Floor! Find the next Stairwell to reach the School Gymnasium!'
             ]);
             return;
           } else if (this.currentMapIndex === 4) {
-            // Climb from 2F into the School Gymnasium!
             this.currentMapIndex = 5;
             const gym = this.currentMap();
             this.playerPos = { x: gym.spawnStart.x, y: gym.spawnStart.y };
             this.updateTopHud();
             SR.UI.showDialogue('SCHOOL GYMNASIUM', [
-              'You burst into the School Gym! Varsity Captain Chad and the Team of Jocks are waiting at center court!'
+              'You made it to the Gym! Varsity Captain Chad and the Team of Jocks are waiting on the court!'
             ]);
             return;
           }
         }
 
-        // If on a School Floor (1F or 2F), step chasing enemies!
+        // Step chasing school enemies on 1F & 2F!
         if (this.currentMapIndex === 3 || this.currentMapIndex === 4) {
           this.stepSchoolEnemies();
         }
@@ -352,7 +368,6 @@ window.SR = window.SR || {};
         return;
       }
 
-      // Check Wild Street Turf Random Encounter!
       if (tile === SR.TILE.TURF_WILD) {
         if (Math.random() < 0.24) {
           this.startWildStreetMatch();
@@ -360,25 +375,24 @@ window.SR = window.SR || {};
       }
     },
 
-    // Roguelike Turn-Based Enemy Chase in School Corridors
+    // Roguelike Turn-Based Enemy Chase in School Classrooms & Corridors
     stepSchoolEnemies: function () {
       const map = this.currentMap();
       if (!map || !map.npcs) return;
+      const visR = map.visionRadius || 5.5;
 
       for (let i = 0; i < map.npcs.length; i++) {
         const en = map.npcs[i];
         if (!en.chaser || en.defeated) continue;
 
         const dist = Math.hypot(en.x - this.playerPos.x, en.y - this.playerPos.y);
-        // If player is within sight range, enemy spots player and chases!
-        if (dist <= 5.0) {
+        if (dist <= visR) {
           en.alerted = true;
-          en.badge = '!';
+          en.alertIcon = true;
         }
 
         if (!en.alerted) continue;
 
-        // Move 1 step toward player
         const dx = this.playerPos.x - en.x;
         const dy = this.playerPos.y - en.y;
         const candidates = [];
@@ -392,7 +406,6 @@ window.SR = window.SR || {};
 
         for (let c = 0; c < candidates.length; c++) {
           const dest = candidates[c];
-          // If enemy reaches player's tile -> trigger battle immediately!
           if (dest.x === this.playerPos.x && dest.y === this.playerPos.y) {
             this.triggerNpcInteraction(en);
             return;
@@ -406,7 +419,6 @@ window.SR = window.SR || {};
           }
         }
 
-        // If enemy is now standing on player's tile -> battle!
         if (en.x === this.playerPos.x && en.y === this.playerPos.y) {
           this.triggerNpcInteraction(en);
           return;
@@ -416,6 +428,8 @@ window.SR = window.SR || {};
 
     interactInOverworld: function () {
       const map = this.currentMap();
+      const mw = map.width || 20;
+      const mh = map.height || 18;
       const tx = this.playerPos.x + this.playerFacing.dx;
       const ty = this.playerPos.y + this.playerFacing.dy;
 
@@ -429,7 +443,7 @@ window.SR = window.SR || {};
         return;
       }
 
-      // Check Chest in front or adjacent
+      // Check Chest / Gym Bag in front or adjacent
       let chest = map.chests.find(c => c.x === tx && c.y === ty && !c.opened);
       if (!chest) {
         chest = map.chests.find(c => !c.opened && Math.abs(c.x - this.playerPos.x) + Math.abs(c.y - this.playerPos.y) <= 1);
@@ -439,20 +453,18 @@ window.SR = window.SR || {};
         return;
       }
 
-      // Check Prop in front or under player (Bed, TV, Console, Bookshelf, Sofa, Kitchen)
-      if (map.props) {
-        const prop = map.props.find(p => (p.x === tx && p.y === ty) || (p.x === this.playerPos.x && p.y === this.playerPos.y));
-        if (prop) {
-          if (prop.heal) {
-            this.squad.forEach(p => { p.sta = p.maxSta; });
-          }
-          SR.UI.showDialogue(prop.name, [prop.text]);
-          return;
+      // Check Multi-tile Furniture Prop in front or under player
+      const prop = this.findPropAt(map, tx, ty) || this.findPropAt(map, this.playerPos.x, this.playerPos.y);
+      if (prop) {
+        if (prop.heal) {
+          this.squad.forEach(p => { p.sta = p.maxSta; });
         }
+        SR.UI.showDialogue(prop.name, [prop.text]);
+        return;
       }
 
       // Check Door tile in front
-      if (ty >= 0 && ty < 18 && tx >= 0 && tx < 20) {
+      if (ty >= 0 && ty < mh && tx >= 0 && tx < mw) {
         const fTile = map.grid[ty][tx];
         if (fTile === SR.TILE.CLUB_DOOR) {
           SR.UI.openClubMenu(this);
@@ -472,8 +484,8 @@ window.SR = window.SR || {};
         this.questState[reg.id] = 'FOUND_ITEM';
         this.cash += 40;
         this.updateTopHud();
-        SR.UI.showDialogue('QUEST CHEST FOUND!', [
-          `You opened the purple chest and recovered the [${chest.questItem}] + $40!`,
+        SR.UI.showDialogue('QUEST ITEM FOUND!', [
+          `Recovered the [${chest.questItem}] + $40!`,
           `Bring the ${chest.questItem} back to ${reg.quest.giverName} in ${reg.townName} to recruit them!`
         ]);
       } else {
@@ -488,7 +500,8 @@ window.SR = window.SR || {};
           extraMsg = ` and 1 ${SR.ITEMS[chest.item].name}!`;
         }
         this.updateTopHud();
-        SR.UI.showDialogue('ITEM FOUND!', [`Found $${cGain}${extraMsg}`]);
+        const header = chest.isGymBag ? 'SPORTS GYM BAG' : 'SUPPLY CRATE';
+        SR.UI.showDialogue(header, [`Found $${cGain}${extraMsg}`]);
       }
     },
 
@@ -496,6 +509,7 @@ window.SR = window.SR || {};
       const reg = this.world.region;
 
       if (npc.role === 'GRANDAD' || npc.role === 'PROLOGUE_FRIEND') {
+        npc.alertIcon = false;
         SR.UI.showDialogue(npc.name, npc.dialogue);
         return;
       }
@@ -508,31 +522,33 @@ window.SR = window.SR || {};
 
       if (npc.role === 'SCHOOL_ENEMY') {
         if (npc.defeated) {
-          SR.UI.showDialogue(npc.name, ['You already schooled us! Keep looking for the stairs!']);
+          SR.UI.showDialogue(npc.name, ['You already beat us! The stairs are down the hall!']);
           return;
         }
         SR.UI.showDialogue(npc.name, [
-          `Hey!! Freshmen aren't allowed in these corridors! Next Goal Wins—prepare to get tackled!`
+          'Hey!! These school halls belong to the Varsity Jocks now! Next Goal Wins—let\'s go!'
         ], () => {
           const enemyTeam = SR.generateEnemyTeam(1, false, npc.teamName);
           SR.Match.start(this, enemyTeam, { isBoss: false, goalsToWin: 1, maxTurns: 6 }, (res) => {
             if (res.won) {
               npc.defeated = true;
-              npc.badge = '✓';
+              npc.alertIcon = false;
               this.cash += 35;
               this.updateTopHud();
-              SR.UI.showDialogue('HALLWAY WIN!', [
-                `You beat ${npc.teamName} (${res.playerScore}-${res.enemyScore}) and found $35! Keep searching for the stairs!`
+              SR.UI.showDialogue('CLASSROOM WIN!', [
+                `Beat ${npc.teamName} (${res.playerScore}-${res.enemyScore}) and won $35! Keep exploring for the stairwell!`
               ]);
             } else {
-              // If player loses in the School, warp back outside in Hometown with full Stamina
+              // Regenerate fresh school floors when pushed back outside so each attempt stays roguelike!
+              this.world.maps[3] = SR.generatePrologueWorld().maps[3];
+              this.world.maps[4] = SR.generatePrologueWorld().maps[4];
               this.currentMapIndex = 1;
               const town = this.world.maps[1];
               this.playerPos = { x: town.spawnOutsideHero.x, y: town.spawnOutsideHero.y };
               this.squad.forEach(p => { p.sta = p.maxSta; });
               this.updateTopHud();
-              SR.UI.showDialogue('REGROUP AT HOME', [
-                'The Jocks pushed you back outside the school! Your squad caught their breath (100% Stamina)—head back North when ready!'
+              SR.UI.showDialogue('PUSHED OUTSIDE', [
+                'The Jocks sent you back outside! Your squad caught their breath (100% Stamina)—head back North when ready!'
               ]);
             }
           });
@@ -542,8 +558,8 @@ window.SR = window.SR || {};
 
       if (npc.role === 'SCHOOL_BOSS') {
         SR.UI.showDialogue(npc.name, [
-          'Well, well! Look who made it to the Gymnasium! This school belongs to the VARSITY JOCKS now!',
-          'MINI-BOSS MATCH: Varsity Jocks V! First to 2 Goals takes over the school!'
+          'Look who finally made it to the Gymnasium! This school belongs to the VARSITY JOCKS now!',
+          'MINI-BOSS MATCH: Varsity Jocks V! First to 2 Goals wins the Gym!'
         ], () => {
           const jockBossTeam = SR.generateEnemyTeam(1, false, 'Varsity Jocks V');
           SR.Match.start(this, jockBossTeam, { isBoss: false, goalsToWin: 2, maxTurns: 10 }, (res) => {
@@ -556,24 +572,25 @@ window.SR = window.SR || {};
                 p.dri += 2; p.pas += 2; p.sho += 2; p.tac += 2; p.int += 2;
               });
               SR.UI.showDialogue('SCHOOL SAVED!!', [
-                'Varsity Capt. Chad: "No way!! How did a bunch of street kids beat the Varsity Jocks?!"',
-                'Axel: "We did it, Leo!! We saved the High School gym! Now let\'s head to the Rustyard Base Camp and enter the Regional Striker Championship!"'
+                'Varsity Capt. Chad: "Impossible!! Beaten on our own gym court?!"',
+                'Axel: "We did it, Leo!! We took back the school! Now let\'s head to the Rustyard Base Camp for the Regional Striker Championship!"'
               ], () => {
-                // Transition to original game starting at Region 1 Base Camp!
                 this.loadRegion(0);
-                SR.UI.showDialogue('ARRIVED AT BASE CAMP', [
+                SR.UI.showDialogue('BASE CAMP REACHED', [
                   `Welcome to ${this.world.region.townName}! Your squad leveled up and won $100 prize cash!`,
-                  `Visit the CLUBHOUSE (Red Roof) to recruit players, check the SHOP (Blue Roof), talk to Kael (!), or head NORTH to the Stadium!`
+                  `Enter the Clubhouse (Ball Sign) to recruit Free Agents, visit the Kit Shop (Jersey Sign), or head North to the Stadium!`
                 ]);
               });
             } else {
+              this.world.maps[3] = SR.generatePrologueWorld().maps[3];
+              this.world.maps[4] = SR.generatePrologueWorld().maps[4];
               this.currentMapIndex = 1;
               const town = this.world.maps[1];
               this.playerPos = { x: town.spawnOutsideHero.x, y: town.spawnOutsideHero.y };
               this.squad.forEach(p => { p.sta = p.maxSta; });
               this.updateTopHud();
               SR.UI.showDialogue('REGROUP AT HOME', [
-                'The Varsity Jocks defended the Gym this time! Rest up at home or Mum\'s kitchen and rush back to the School!'
+                'The Varsity Jocks held the Gym this time! Rest up at home or Mum\'s kitchen and rush back North!'
               ]);
             }
           });
@@ -605,7 +622,7 @@ window.SR = window.SR || {};
           SR.UI.showDialogue(npc.name, [reg.quest.activeText]);
         } else if (qs === 'FOUND_ITEM') {
           this.questState[reg.id] = 'COMPLETED';
-          npc.badge = '★';
+          npc.alertIcon = false;
           const starTpl = SR.QUEST_RECRUITS[reg.id];
           const newHero = SR.createPlayer(starTpl, this.coachLegacyLevel);
           this.squad.push(newHero);
@@ -636,7 +653,6 @@ window.SR = window.SR || {};
           SR.Match.start(this, enemyTeam, { isBoss: false }, (res) => {
             if (res.won) {
               npc.defeated = true;
-              npc.badge = '✓';
             }
             this.handleMatchCompleted(res);
           });
@@ -743,10 +759,22 @@ window.SR = window.SR || {};
       }
     },
 
-    // Render Overworld + Fog of War + Cutscene + UI or Match
+    // Draw a tiny pixel-art '!' bubble (zero font/text!) for alerted Jocks or active story quest
+    drawPixelAlertBubble: function (ctx, sx, sy) {
+      ctx.fillStyle = '#0d1017';
+      ctx.fillRect(sx + 4, sy - 9, 8, 8);
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(sx + 5, sy - 8, 6, 6);
+      ctx.fillStyle = '#e63946';
+      ctx.fillRect(sx + 7, sy - 7, 2, 3);
+      ctx.fillRect(sx + 7, sy - 3, 2, 1);
+    },
+
+    // Render Overworld (with Camera Scrolling, Multi-Tile GBA Furniture & Fog of War)
     render: function () {
       const ctx = this.ctx;
-      ctx.clearRect(0, 0, 320, 288);
+      ctx.fillStyle = '#06080e';
+      ctx.fillRect(0, 0, 320, 288);
 
       if (SR.Match.active) {
         SR.Match.render(ctx, this.tick);
@@ -754,79 +782,106 @@ window.SR = window.SR || {};
       }
 
       const map = this.currentMap();
+      const mw = map.width || 20;
+      const mh = map.height || 18;
+      const cam = this.getCamera();
       const pal = this.world.region.palette;
       const isFog = !!map.fogOfWar;
-      const visR = map.visionRadius || 4.5;
+      const visR = map.visionRadius || 5.5;
 
-      // 1. Draw 20x18 Tile Grid (with Fog of War if enabled)
-      for (let y = 0; y < 18; y++) {
-        for (let x = 0; x < 20; x++) {
-          const dist = Math.hypot(x - this.playerPos.x, y - this.playerPos.y);
-          const inSight = !isFog || (dist <= visR);
-          const wasExplored = !isFog || (map.explored && map.explored[y][x]);
+      // 1. Draw Visible Base Tiles in 20x18 Camera Viewport
+      for (let vy = 0; vy < 18; vy++) {
+        const wy = cam.y + vy;
+        if (wy < 0 || wy >= mh) continue;
+        for (let vx = 0; vx < 20; vx++) {
+          const wx = cam.x + vx;
+          if (wx < 0 || wx >= mw) continue;
 
-          if (!wasExplored) {
-            ctx.fillStyle = '#06080e';
-            ctx.fillRect(x * 16, y * 16, 16, 16);
-            continue;
-          }
+          const wasExplored = !isFog || (map.explored && map.explored[wy][wx]);
+          if (!wasExplored) continue;
 
-          SR.drawTile(ctx, map.grid[y][x], x * 16, y * 16, pal, this.tick);
-
-          if (!inSight) {
-            // Dimmed memory fog for previously explored corridors
-            ctx.fillStyle = 'rgba(6, 8, 14, 0.72)';
-            ctx.fillRect(x * 16, y * 16, 16, 16);
-          }
+          SR.drawTile(ctx, map.grid[wy][wx], vx * 16, vy * 16, pal, this.tick);
         }
       }
 
-      // 2. Draw Map Labels (Signs / Portals)
-      if (map.labels && !isFog) {
-        ctx.font = 'bold 8px monospace';
-        map.labels.forEach(lb => {
-          const lx = lb.x * 16;
-          const ly = lb.y * 16;
-          const tw = ctx.measureText(lb.text).width;
-          ctx.fillStyle = 'rgba(10, 13, 20, 0.78)';
-          ctx.fillRect(lx - tw / 2 - 3, ly - 8, tw + 6, 11);
-          ctx.fillStyle = lb.color || '#ffffff';
-          ctx.fillText(lb.text, lx - tw / 2, ly);
+      // 2. Draw Multi-Tile GBA Furniture & Classroom Props (SR.drawDecor)
+      if (map.decor) {
+        map.decor.forEach(d => {
+          const sx = (d.x - cam.x) * 16;
+          const sy = (d.y - cam.y) * 16;
+          if (sx + (d.w || 1) * 16 < 0 || sx > 320 || sy + (d.h || 1) * 16 < 0 || sy > 288) return;
+
+          if (isFog && map.explored) {
+            // Only draw decor if at least one of its tiles has been explored
+            let anyExplored = false;
+            for (let dy = 0; dy < (d.h || 1); dy++) {
+              for (let dx = 0; dx < (d.w || 1); dx++) {
+                if (map.explored[d.y + dy] && map.explored[d.y + dy][d.x + dx]) {
+                  anyExplored = true;
+                }
+              }
+            }
+            if (!anyExplored) return;
+          }
+
+          SR.drawDecor(ctx, d, sx, sy, this.tick);
         });
       }
 
-      // 3. Draw Chests (only if within vision on fog maps)
+      // 3. Apply Fog of War Dimming Layer over explored-but-out-of-sight tiles
+      if (isFog) {
+        for (let vy = 0; vy < 18; vy++) {
+          const wy = cam.y + vy;
+          if (wy < 0 || wy >= mh) continue;
+          for (let vx = 0; vx < 20; vx++) {
+            const wx = cam.x + vx;
+            if (wx < 0 || wx >= mw) continue;
+
+            const wasExplored = map.explored && map.explored[wy][wx];
+            if (!wasExplored) {
+              ctx.fillStyle = '#06080e';
+              ctx.fillRect(vx * 16, vy * 16, 16, 16);
+              continue;
+            }
+            const dist = Math.hypot(wx - this.playerPos.x, wy - this.playerPos.y);
+            if (dist > visR) {
+              ctx.fillStyle = 'rgba(8, 12, 20, 0.68)';
+              ctx.fillRect(vx * 16, vy * 16, 16, 16);
+            }
+          }
+        }
+      }
+
+      // 4. Draw Gym Bags / Loot Crates (only if within vision on fog maps)
       map.chests.forEach(c => {
         if (isFog && Math.hypot(c.x - this.playerPos.x, c.y - this.playerPos.y) > visR) return;
-        SR.drawChest(ctx, c.x * 16, c.y * 16, c.opened, c.isQuest);
-        if (!c.opened && c.isQuest) {
-          ctx.fillStyle = '#ffd166';
-          ctx.font = 'bold 8px monospace';
-          ctx.fillText('QUEST', c.x * 16 - 4, c.y * 16 - 2);
-        }
+        const sx = (c.x - cam.x) * 16;
+        const sy = (c.y - cam.y) * 16;
+        if (sx < -16 || sx > 320 || sy < -16 || sy > 288) return;
+        SR.drawChest(ctx, sx, sy, c.opened, c.isQuest, c.isGymBag);
       });
 
-      // 4. Draw NPCs (only if within vision on fog maps)
+      // 5. Draw NPCs (only if within vision on fog maps)
       map.npcs.forEach(n => {
         if (isFog && Math.hypot(n.x - this.playerPos.x, n.y - this.playerPos.y) > visR) return;
-        SR.drawCharacter(ctx, n.x * 16, n.y * 16, {
+        const sx = (n.x - cam.x) * 16;
+        const sy = (n.y - cam.y) * 16;
+        if (sx < -16 || sx > 320 || sy < -16 || sy > 288) return;
+
+        SR.drawCharacter(ctx, sx, sy, {
           skin: n.skin,
           hair: n.hair,
           kitPrimary: n.kitPrimary,
           kitSecondary: n.kitSecondary,
-          moving: !!n.alerted
+          moving: !!n.alerted && !n.defeated
         }, this.tick);
 
-        if (n.badge) {
-          ctx.fillStyle = '#0d1017';
-          ctx.fillRect(n.x * 16 + 1, n.y * 16 - 10, 15, 9);
-          ctx.fillStyle = n.badge === '!' || n.badge === 'BOSS' ? '#ffd166' : '#4cc9f0';
-          ctx.font = 'bold 7px monospace';
-          ctx.fillText(n.badge.slice(0, 4), n.x * 16 + 2, n.y * 16 - 3);
+        if (n.alertIcon && !n.defeated) {
+          this.drawPixelAlertBubble(ctx, sx, sy);
         }
       });
 
-      // 5. If Bedroom Cutscene Stage 2 is active, draw the 5 teammates gathered in the bedroom!
+      // 6. If Bedroom Cutscene Stage 2 is active, draw the 5 teammates gathered on the rug!
       if (this.cutsceneStage === 2 && this.currentMapIndex === 0) {
         const friendPositions = [
           { x: 7, y: 9 },
@@ -838,7 +893,7 @@ window.SR = window.SR || {};
         for (let i = 0; i < Math.min(5, this.squad.length); i++) {
           const fp = friendPositions[i];
           const mate = this.squad[i];
-          SR.drawCharacter(ctx, fp.x * 16, fp.y * 16, {
+          SR.drawCharacter(ctx, (fp.x - cam.x) * 16, (fp.y - cam.y) * 16, {
             skin: mate.skin,
             hair: mate.hair,
             kitPrimary: '#3a86ff',
@@ -848,24 +903,31 @@ window.SR = window.SR || {};
         }
       }
 
-      // 6. Draw Player Captain
-      SR.drawCharacter(ctx, this.playerPos.x * 16, this.playerPos.y * 16, {
-        skin: '#f4c29f',
-        hair: '#3a86ff',
-        kitPrimary: '#3a86ff',
-        kitSecondary: '#ffffff',
-        moving: this.cutsceneStage !== 1,
-        hasBall: this.cutsceneStage === 0
-      }, this.tick);
-
-      // Sleeping "Zzz" indicator while in bed at start of cutscene
+      // 7. Draw Player Captain (tucked under bed blanket during sleep stage 1, full sprite otherwise!)
+      const px = (this.playerPos.x - cam.x) * 16;
+      const py = (this.playerPos.y - cam.y) * 16;
       if (this.cutsceneStage === 1 && this.currentMapIndex === 0) {
-        ctx.fillStyle = '#ffd166';
-        ctx.font = 'bold 9px monospace';
-        ctx.fillText('Zzz...', this.playerPos.x * 16 + 2, this.playerPos.y * 16 - 4);
+        // Draw Leo's sleeping head resting on the pillow above the blanket!
+        ctx.fillStyle = '#f4c29f';
+        ctx.fillRect(px + 3, py - 2, 8, 5);
+        ctx.fillStyle = '#3a86ff';
+        ctx.fillRect(px + 2, py - 4, 10, 3);
+        // Closed sleeping eyes
+        ctx.fillStyle = '#2b2d42';
+        ctx.fillRect(px + 4, py + 1, 2, 1);
+        ctx.fillRect(px + 8, py + 1, 2, 1);
+      } else {
+        SR.drawCharacter(ctx, px, py, {
+          skin: '#f4c29f',
+          hair: '#3a86ff',
+          kitPrimary: '#3a86ff',
+          kitSecondary: '#ffffff',
+          moving: true,
+          hasBall: this.cutsceneStage === 0
+        }, this.tick);
       }
 
-      // 7. Draw UI Overlay if active
+      // 8. Draw UI Overlay if active
       SR.UI.render(ctx, this, this.tick);
     },
 
@@ -942,8 +1004,9 @@ window.SR = window.SR || {};
           return;
         }
 
-        const tx = Math.floor(cx / 16);
-        const ty = Math.floor(cy / 16);
+        const cam = this.getCamera();
+        const tx = Math.floor(cx / 16) + cam.x;
+        const ty = Math.floor(cy / 16) + cam.y;
         const dx = tx - this.playerPos.x;
         const dy = ty - this.playerPos.y;
         if (dx === 0 && dy === 0) {
